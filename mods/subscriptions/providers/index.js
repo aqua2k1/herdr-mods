@@ -1,2 +1,3 @@
 import codex from "./codex.js";
-export const PROVIDERS = [codex];
+import deepseek from "./deepseek.js";
+export const PROVIDERS = [codex, deepseek];

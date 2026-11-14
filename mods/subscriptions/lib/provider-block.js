@@ -35,6 +35,17 @@ export function providerBlock(provider, state, t) {
           : `重置：${dateTime(quota.resetsAt)}`));
       body.child(item);
     }
+    if ("accountAvailable" in snapshot) {
+      body.child(row("API 调用",
+        snapshot.accountAvailable === true ? "余额充足" :
+          snapshot.accountAvailable === false ? "余额不足" : "状态未知"));
+    }
+    for (const balance of snapshot.balances ?? []) {
+      body.child(v_flex().gap(6)
+        .child(row("总余额", `${balance.currency} ${balance.total}`))
+        .child(row("赠送余额", balance.granted === null ? "—" : `${balance.currency} ${balance.granted}`))
+        .child(row("充值余额", balance.toppedUp === null ? "—" : `${balance.currency} ${balance.toppedUp}`)));
+    }
     const spend = snapshot.spending;
     if (spend) {
       const item = v_flex().gap(6).child(row(spend.title, money(spend.amount, spend.currency)));

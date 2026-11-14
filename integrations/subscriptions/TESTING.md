@@ -27,4 +27,10 @@ Temporary request tracing was removed from the installed MOD. The final screensh
 
 Re-tested in a real Herdr window after adding reset-card display. Screenshot inspected: `/tmp/herdr-subscriptions-reset-cards.png`. The existing read request returned one available card, with title, description, status, grant time and expiry, all rendered inside the Codex block. No consume endpoint or action was added or invoked. `herdr-app status` reported no errors; 16 tests and the MOD check passed. Proxy environment variables were again supplied only to the test app process.
 
-Not yet verified in the real window: signed-out error state, alternate providers, and multi-window operation. API provider transport is not implemented.
+## DeepSeek API balance
+
+Added the fixed HTTPS GET `/user/balance` transport and decimal-string balance model using the official response schema. `npm test` passes 22 top-level tests, including a Python helper suite with 5 cases (missing key, Bearer GET/whitelisted output, sanitized 401 error, timeout, malformed response). MOD check passes.
+
+Installed the updated MOD and inspected `/tmp/herdr-subscriptions-deepseek-test.png`: the independent DeepSeek API block correctly shows a missing-key error, while Codex continues loading successfully. Runtime status reported no errors. This environment has no `DEEPSEEK_API_KEY`, so **no authenticated live DeepSeek balance result has been verified**. HTTP success/error responses are tested with mocks; no real key is embedded in source/tests. Proxy settings were only passed to the test app process.
+
+Not yet verified in the real window: signed-out Codex error state, authenticated DeepSeek balance display, and multi-window operation.

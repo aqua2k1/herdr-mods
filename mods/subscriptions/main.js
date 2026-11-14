@@ -32,7 +32,7 @@ export default class Subscriptions extends View {
         await loadProvider(this.states[provider.id], async () => {
           const result = await exec("python3",
             [`${appHome()}/mods/subscriptions/${provider.helper}`], { timeout: 20000 });
-          if (result.code !== 0) throw new Error(result.stderr?.trim() || "无法查询 Codex 额度");
+          if (result.code !== 0) throw new Error(result.stderr?.trim() || `无法查询 ${provider.title}`);
           return provider.parse(result.stdout, Date.now());
         }, () => cx.notify());
       });

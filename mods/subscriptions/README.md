@@ -1,6 +1,6 @@
 # Subscriptions
 
-Provider cards in Herdr's Files/Changes side panel. Currently implements **Codex subscriptions only**; API spending is supported by the card model, not connected to a billing service.
+Provider cards in Herdr's Files/Changes side panel. Implements **Codex subscriptions** and **DeepSeek API balance**. API balance is distinct from spending/budgets; it does not invent an expense total or usage percentage.
 
 ## Behavior
 
@@ -17,6 +17,25 @@ Provider cards in Herdr's Files/Changes side panel. Currently implements **Codex
 Herdr, Python 3, and an installed, signed-in Codex CLI supporting `codex app-server` and `account/rateLimits/read`. macOS/Linux only. Optional binary override: `HERDR_SUBSCRIPTIONS_CODEX_BIN`.
 
 The helper delegates authentication to Codex, never reads credentials, sends no prompt, and terminates its app-server. Deadline: 15 seconds; Herdr exec bound: 20 seconds. No automatic retries.
+
+## DeepSeek API configuration
+
+Set `DEEPSEEK_API_KEY` in the environment inherited by Herdr when it starts. The Python helper sends a read-only `GET https://api.deepseek.com/user/balance` with Bearer authentication. Keys are never passed as command-line arguments, sent to the MOD UI, logged, or persisted by this MOD. No permanent proxy settings are added.
+
+Example (enter the key without adding it to shell history, Bash):
+
+```bash
+read -rsp "DeepSeek API key: " DEEPSEEK_API_KEY; echo
+export DEEPSEEK_API_KEY
+herdr-app
+unset DEEPSEEK_API_KEY
+```
+
+A running app must be relaunched to inherit a newly set variable. Do not paste keys in chat or commit them. A missing key produces an error in the DeepSeek card, without affecting Codex. Every open queries both providers independently; no background polling.
+
+Displays each returned currency's total, granted, and topped-up balances and whether the balance is sufficient for API calls. Decimal strings are preserved without floating-point rounding. No reset date, subscription quota, or spending is inferred from a balance.
+
+Official schema: https://api-docs.deepseek.com/api/get-user-balance/
 
 ## Install
 
@@ -49,7 +68,9 @@ The parser returns:
     windowSeconds: 18000    // optional
   }],
   spending: undefined,     // or { title, amount, currency, budget?, periodEnd? }
-  resetCredits: null       // or { availableCount: number|null, credits: [{ title, description, status, grantedAt, expiresAt }]|null }; timestamps in milliseconds
+  resetCredits: null,      // or { availableCount: number|null, credits: [{ title, description, status, grantedAt, expiresAt }]|null }; timestamps in milliseconds
+  accountAvailable: true,  // optional API balance sufficiency flag
+  balances: []             // optional [{ currency, total, granted, toppedUp }]; amounts are decimal strings, optional amounts may be null
 }
 ```
 
