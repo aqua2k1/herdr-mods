@@ -50,5 +50,6 @@ export function parse(text, observedAt = Date.now()) {
 
 export default {
   id: "codex-subscription", title: "Codex", kind: "subscription",
+  icon: { path: "icons/codex.svg", tint: true },
   helper: "helpers/codex-limits.py", parse,
 };

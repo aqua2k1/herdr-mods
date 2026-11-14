@@ -31,6 +31,7 @@ export function parse(text, observedAt = Date.now()) {
 
 export default {
   id: "deepseek-api", title: "DeepSeek", kind: "api",
+  icon: { path: "icons/deepseek.svg", tint: false },
   helper: "helpers/deepseek-balance.py", parse,
   credential: { id: "deepseek-api", label: "API Key", env: "DEEPSEEK_API_KEY" },
 };

@@ -63,9 +63,13 @@ Run `herdr-app check /absolute/path/to/mods/subscriptions` and `npm test` from t
 
 For an explicit live API test, run `npm run test:live`. This launches your actual signed-in Codex CLI, validates the normalized quotas and prints display data only. It is not included in the default unit tests and sends no model prompt. A passing live query/check is not proof of the sidebar open/close behavior; that still requires a running Herdr window.
 
+## Icons
+
+Codex and DeepSeek icons are bundled from [LobeHub Icons](https://github.com/lobehub/lobe-icons) under MIT. See [icon attribution and license](icons/README.md).
+
 ## Provider contract
 
-Register adapters in `providers/index.js`. Each adapter has `id`, `title`, `kind` (`subscription` or `api`), `helper` (Python script relative to this MOD) and `parse(stdout, observedAt)`. Each helper runs locally through Python 3. To add another transport, extend the runner explicitly rather than hiding side effects in the renderer.
+Register adapters in `providers/index.js`. Each adapter has `id`, `title`, `kind` (`subscription` or `api`), `helper` (Python script relative to this MOD) and `parse(stdout, observedAt)`. Each helper runs locally through Python 3. An optional `icon: { path: "icons/provider.svg", tint: true }` adds a locally bundled icon before the title; `tint: true` follows the theme foreground, while `false` preserves a color icon. Providers without an icon still render normally. To add another transport, extend the runner explicitly rather than hiding side effects in the renderer.
 
 Providers that need an API credential additionally declare:
 

@@ -1,4 +1,4 @@
-import { div } from "gpui-kit";
+import { div, image, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { percent, dateTime, money } from "./format.js";
 import { resetCreditsModel } from "./reset-credits.js";
@@ -15,9 +15,19 @@ const row = (title, value) => h_flex().gap(8).justify_between().items_center()
 
 export function providerBlock(provider, state, t, credentialContent = null) {
   const snapshot = state.snapshot;
+  const heading = h_flex().gap(8).items_center();
+  if (provider.icon) {
+    const path = `mods/subscriptions/${provider.icon.path}`;
+    heading.child(provider.icon.tint
+      ? svg(path).size(18).flex_none().text_color(t.foreground)
+      : image(path).size(18).flex_none());
+  }
+  heading.child(div().font_semibold().child(provider.title));
   const card = v_flex().id(provider.id).flex_none().p(12).gap(12)
     .rounded(8).border(1).border_color(t.border).bg(t.surface)
-    .child(row(provider.title, provider.kind === "api" ? "API" : "订阅"));
+    .child(h_flex().gap(8).justify_between().items_center()
+      .child(heading)
+      .child(div().flex_none().child(provider.kind === "api" ? "API" : "订阅")));
   if (snapshot?.tier) card.child(div().text_color(t.muted).child(snapshot.tier));
   if (state.status === "loading") card.child(div().text_color(t.dim).child("正在查询…"));
   if (state.error) card.child(div().text_color(t.ansi1).child(`查询失败：${state.error}`));
