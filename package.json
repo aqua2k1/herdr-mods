@@ -1,0 +1,9 @@
+{
+  "name": "herdr-mods",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test mods/*/test/*.test.js",
+    "test:live": "node scripts/test-codex-live.mjs"
+  }
+}
