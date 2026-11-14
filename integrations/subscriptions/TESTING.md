@@ -44,3 +44,11 @@ Installed the updated MOD and inspected `/tmp/herdr-subscriptions-deepseek-test.
 - Proxy variables remained limited to the test app process.
 
 Not yet verified in the real window: signed-out Codex error state and multi-window operation.
+
+## Windows credential compatibility
+
+- Added interpreter discovery (`python3`, `python`, `py -3`), shared by credential and provider helpers. Discovery is cached; failed helper operations are not retried.
+- Added native Windows owner/DACL validation and protected draft ACLs; reads validate the actual file handle and reject reparse points. POSIX checks are unchanged.
+- Linux `npm test` passes 32 top-level tests, including interpreter fallback and mocked Windows-backend routing/cleanup. The credential suite has 11 cases; two native Windows cases are skipped on Linux. `herdr-app check` also passes for the modified MOD.
+- Added `.github/workflows/credentials.yml` to run the focused credential/interpreter tests on Linux, macOS and Windows. Windows-only tests exercise broad-ACL rejection and directory-junction rejection using fake secrets.
+- Native Windows execution and Windows Herdr UI have **not** been verified locally. CI results must be checked before treating the native ACL path as validated. The Codex pipe helper remains macOS/Linux-only.

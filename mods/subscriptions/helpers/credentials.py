@@ -9,7 +9,22 @@ import sys
 import tempfile
 import time
 
+if os.name == "nt":
+    import windows_credentials as windows_security
+else:
+    windows_security = None
+
 MAX_BYTES = 8192
+
+
+def redirected(path):
+    if path.is_symlink():
+        return True
+    try:
+        return bool(getattr(path.lstat(), "st_file_attributes", 0) &
+                    getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+    except FileNotFoundError:
+        return False
 
 
 def validate_id(value):
@@ -32,13 +47,21 @@ class CredentialStore:
     def directory(self, create=False):
         # Refuse redirected storage; do not change permissions on shared app data.
         for path in (self.root.parent.parent, self.root.parent, self.root):
-            if path.is_symlink():
-                raise ValueError("credential directory is a symlink")
+            if redirected(path):
+                raise ValueError("credential directory is redirected")
             if create:
                 path.mkdir(mode=0o700, parents=True, exist_ok=True)
-            if path.exists() and (not path.is_dir() or path.stat().st_uid != os.getuid()):
+            if path.exists() and (not path.is_dir() or
+                                  (windows_security is None and path.stat().st_uid != os.getuid())):
                 raise ValueError("invalid credential directory")
-        if create:
+        if windows_security is not None:
+            for path in (self.root.parent, self.root):
+                if path.exists():
+                    if create:
+                        windows_security.secure(path)
+                    else:
+                        windows_security.validate(path)
+        elif create:
             os.chmod(self.root.parent, 0o700)
             os.chmod(self.root, 0o700)
         elif self.root.exists() and self.root.stat().st_mode & 0o077:
@@ -49,10 +72,14 @@ class CredentialStore:
         return self.root / (validate_id(credential_id) + ".key")
 
     def read_path(self, path):
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        if windows_security is not None:
+            fd = windows_security.open_private(path)
+        else:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(fd, "rb") as stream:
             info = os.fstat(stream.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            if not stat.S_ISREG(info.st_mode) or (windows_security is None and
+                    (info.st_uid != os.getuid() or info.st_mode & 0o077)):
                 raise ValueError("unsafe credential file")
             data = stream.read(MAX_BYTES + 1)
         if len(data) > MAX_BYTES:
@@ -81,8 +108,22 @@ class CredentialStore:
         self.directory(create=True)
         self.clean_pending(credential_id, stale_only=True)
         fd, name = tempfile.mkstemp(prefix="." + credential_id + "-", suffix=".pending", dir=self.root)
-        os.fchmod(fd, 0o600)
-        os.close(fd)
+        try:
+            if windows_security is not None:
+                # Empty until protected; no secret is written before prepare returns.
+                os.close(fd)
+                fd = None
+                windows_security.secure(Path(name))
+            else:
+                os.fchmod(fd, 0o600)
+        except Exception:
+            if fd is not None:
+                os.close(fd)
+            Path(name).unlink(missing_ok=True)
+            raise
+        else:
+            if fd is not None:
+                os.close(fd)
         return Path(name).name
 
     def pending_path(self, credential_id, token):
@@ -96,9 +137,14 @@ class CredentialStore:
         pending = self.pending_path(credential_id, token)
         self.read_path(pending)  # Validate before replacing any last good credential.
         target = self.path(credential_id)
-        if target.is_symlink():
-            raise ValueError("credential file is a symlink")
-        fd = os.open(pending, os.O_RDONLY | os.O_NOFOLLOW)
+        if redirected(target):
+            raise ValueError("credential file is redirected")
+        # Windows FlushFileBuffers needs a writable handle. Parent ACL and the
+        # prior handle-based validation protect this draft from other users.
+        if windows_security is not None:
+            fd = os.open(pending, os.O_RDWR | os.O_BINARY)
+        else:
+            fd = os.open(pending, os.O_RDONLY | os.O_NOFOLLOW)
         try:
             os.fsync(fd)
         finally:

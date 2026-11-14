@@ -4,13 +4,14 @@ import json
 import os
 from pathlib import Path
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "helpers"))
-from credentials import CredentialStore, read_credential, main
+from credentials import CredentialStore, read_credential, main, windows_security
 
 
 class CredentialTests(unittest.TestCase):
@@ -29,12 +30,19 @@ class CredentialTests(unittest.TestCase):
     def test_permissions_and_metadata_only(self):
         token = self.store.prepare(self.credential_id)
         pending = self.store.pending_path(self.credential_id, token)
-        self.assertEqual(stat.S_IMODE(pending.stat().st_mode), 0o600)
-        self.assertEqual(stat.S_IMODE(self.store.root.stat().st_mode), 0o700)
+        if windows_security is not None:
+            windows_security.validate(pending)
+            windows_security.validate(self.store.root)
+        else:
+            self.assertEqual(stat.S_IMODE(pending.stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(self.store.root.stat().st_mode), 0o700)
         pending.write_text("test-only-secret")
         self.store.commit(self.credential_id, token)
         self.assertFalse(pending.exists())
-        self.assertEqual(stat.S_IMODE(self.store.path(self.credential_id).stat().st_mode), 0o600)
+        if windows_security is not None:
+            windows_security.validate(self.store.path(self.credential_id))
+        else:
+            self.assertEqual(stat.S_IMODE(self.store.path(self.credential_id).stat().st_mode), 0o600)
         self.assertEqual(self.store.read(self.credential_id), "test-only-secret")
         status = self.store.status(self.credential_id)
         self.assertEqual(status, {"configured": True, "source": "file"})
@@ -70,6 +78,7 @@ class CredentialTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.pending_path(self.credential_id, "../outside")
 
+    @unittest.skipIf(os.name == "nt", "POSIX permissions and symlinks")
     def test_rejects_symlinks_and_permissive_files(self):
         self.save()
         file = self.store.path(self.credential_id)
@@ -88,6 +97,65 @@ class CredentialTests(unittest.TestCase):
         self.store.root.symlink_to(Path(self.temp.name), target_is_directory=True)
         with self.assertRaises(ValueError):
             self.store.prepare(self.credential_id)
+
+    @unittest.skipIf(os.name == "nt", "mock routing tested on POSIX; native tests on Windows")
+    def test_windows_backend_routing_avoids_posix_apis(self):
+        backend = Mock()
+        backend.open_private.side_effect = lambda path: os.open(path, os.O_RDONLY)
+        with patch("credentials.windows_security", backend), \
+                patch("credentials.os.O_BINARY", 0, create=True), \
+                patch("credentials.os.getuid", side_effect=AssertionError("POSIX uid used")), \
+                patch("credentials.os.fchmod", side_effect=AssertionError("POSIX chmod used")):
+            self.assertFalse(self.store.status(self.credential_id)["configured"])
+            self.save()
+            self.assertEqual(self.store.read(self.credential_id), "test-only-secret")
+            self.store.delete(self.credential_id)
+            self.assertFalse(self.store.status(self.credential_id)["configured"])
+        self.assertTrue(backend.secure.called)
+        self.assertTrue(backend.validate.called)
+        self.assertTrue(backend.open_private.called)
+
+    @unittest.skipIf(os.name == "nt", "mock routing tested on POSIX")
+    def test_windows_failed_draft_protection_cleans_empty_file(self):
+        backend = Mock()
+        def secure(path):
+            if path.suffix == ".pending":
+                raise OSError("ACL unavailable")
+        backend.secure.side_effect = secure
+        with patch("credentials.windows_security", backend):
+            with self.assertRaises(OSError):
+                self.store.prepare(self.credential_id)
+        self.assertEqual(list(self.store.root.glob("*.pending")), [])
+
+    @unittest.skipUnless(os.name == "nt", "Windows ACL integration")
+    def test_windows_rejects_broad_acl_and_can_restore_private_acl(self):
+        self.save()
+        file = self.store.path(self.credential_id)
+        for path in (file, self.store.root):
+            result = subprocess.run(["icacls", str(path), "/grant", "*S-1-1-0:(R)"],
+                                    capture_output=True)
+            self.assertEqual(result.returncode, 0)
+            with self.assertRaises((OSError, ValueError)):
+                self.store.read(self.credential_id)
+            windows_security.secure(path)
+            self.assertEqual(self.store.read(self.credential_id), "test-only-secret")
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction integration")
+    def test_windows_rejects_junction_directory(self):
+        self.store.prepare(self.credential_id)
+        self.store.delete(self.credential_id)
+        self.store.root.rmdir()
+        outside = Path(self.temp.name) / "outside"
+        outside.mkdir()
+        result = subprocess.run(["cmd", "/c", "mklink", "/J", str(self.store.root), str(outside)],
+                                capture_output=True)
+        self.assertEqual(result.returncode, 0)
+        try:
+            with self.assertRaises(ValueError):
+                self.store.prepare(self.credential_id)
+        finally:
+            self.store.root.rmdir()
+        self.assertEqual(list(outside.iterdir()), [])
 
     def test_delete_removes_abandoned_drafts_and_status_cleans_old_drafts(self):
         token = self.store.prepare(self.credential_id)

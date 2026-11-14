@@ -14,7 +14,9 @@ Provider cards in Herdr's Files/Changes side panel. Implements **Codex subscript
 
 ## Requirements
 
-Herdr, Python 3, and an installed, signed-in Codex CLI supporting `codex app-server` and `account/rateLimits/read`. macOS/Linux only. Optional binary override: `HERDR_SUBSCRIPTIONS_CODEX_BIN`.
+Herdr and Python 3.9+ are required. Python is discovered through `python3`, `python`, then Windows' `py -3` launcher; install Python and add it to PATH before starting Herdr. DeepSeek credential management supports macOS, Linux, and Windows (a filesystem supporting Windows ACLs, such as NTFS, is required).
+
+The Codex card additionally requires an installed, signed-in Codex CLI supporting `codex app-server` and `account/rateLimits/read`. Its pipe-based helper is still macOS/Linux only; this credential compatibility change does not add Windows Codex support. Optional binary override: `HERDR_SUBSCRIPTIONS_CODEX_BIN`.
 
 The helper delegates authentication to Codex, never reads credentials, sends no prompt, and terminates its app-server. Deadline: 15 seconds; Herdr exec bound: 20 seconds. No automatic retries.
 
@@ -22,9 +24,9 @@ The helper delegates authentication to Codex, never reads credentials, sends no 
 
 Enter the API Key in the DeepSeek card's masked input and click **保存并查询**. Once configured, the card offers **更换** and **删除** (with confirmation). No restart is required. Existing saved keys are never read back into the input.
 
-The shared credential store uses `<appHome>/data/subscriptions/credentials/<credential-id>.key` (for DeepSeek: `deepseek-api.key`). Its directory has mode `0700`, and each credential file has mode `0600`. This is **plaintext storage protected by Unix permissions, not encryption**; it does not protect against administrators or other programs running as your user. Do not copy the credential directory into the repository or share it in backups unintentionally.
+The shared credential store uses `<appHome>/data/subscriptions/credentials/<credential-id>.key` (for DeepSeek: `deepseek-api.key`). On macOS/Linux its directory has mode `0700`, and each credential file has mode `0600`. On Windows, protected ACLs grant access only to the current user and LocalSystem; inherited/broad access and reparse-point redirection are rejected. Filesystems that cannot enforce these ACLs fail closed. This is **plaintext storage protected by OS permissions, not encryption**; it does not protect against administrators or other programs running as your user. Do not copy the credential directory into the repository or share it in backups unintentionally.
 
-`helpers/credentials.py` owns metadata checks, secure draft creation, validation, atomic replacement and deletion. `lib/credentials.js` supplies the generic transport and operation state; `lib/credential-panel.js` supplies the reusable masked-input UI. Herdr's exec API has no stdin parameter, so secrets are written only into a helper-created private draft, then committed atomically; they never appear in process arguments. Failed saves discard their draft, deletion removes abandoned drafts for that credential, and drafts older than 24 hours are cleaned on the next status/save operation. A process crash can leave a private draft until then. Delete unlinks files; it is not secure disk erasure.
+`helpers/credentials.py` owns metadata checks, secure draft creation, validation, atomic replacement and deletion; `helpers/windows_credentials.py` implements native Windows ACL and handle checks with the Python standard library (no extra packages). `lib/credentials.js` supplies the generic transport and operation state; `lib/credential-panel.js` supplies the reusable masked-input UI. Herdr's exec API has no stdin parameter, so secrets are written only into a helper-created private draft, then committed atomically; they never appear in process arguments. Failed saves discard their draft, deletion removes abandoned drafts for that credential, and drafts older than 24 hours are cleaned on the next status/save operation. A process crash can leave a private draft until then. Delete unlinks files; it is not secure disk erasure.
 
 The balance helper reads credentials internally and sends a read-only `GET https://api.deepseek.com/user/balance`. It returns only balance data, never the key. Keys are not kept in shared state/localStorage or logs. The input is cleared on save/cancel and view teardown. No permanent proxy settings are added.
 

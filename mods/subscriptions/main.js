@@ -8,13 +8,15 @@ import { providerBlock } from "./lib/provider-block.js";
 import { OPEN_KEY, panelVisible, shouldLoad } from "./lib/visibility.js";
 import { credentialService, credentialOperation, initialCredentialState } from "./lib/credentials.js";
 import { credentialPanel } from "./lib/credential-panel.js";
+import { pythonRunner } from "./lib/python.js";
 
 export default class Subscriptions extends View {
   init(_props, cx) {
     this.states = Object.fromEntries(PROVIDERS.map(p => [p.id, initialState()]));
     this.credentials = {};
     this.inputs = {};
-    this.credentialStore = credentialService({ exec, writeFile, appHome });
+    this.runPython = pythonRunner(exec);
+    this.credentialStore = credentialService({ exec, writeFile, appHome, runPython: this.runPython });
     for (const provider of PROVIDERS.filter(p => p.credential)) {
       this.credentials[provider.id] = initialCredentialState();
       const input = InputState.new({ placeholder: "输入 API Key" });
@@ -60,7 +62,7 @@ export default class Subscriptions extends View {
     await loadProvider(this.states[provider.id], async () => {
       const args = [`${appHome()}/mods/subscriptions/${provider.helper}`];
       if (provider.credential) args.push("--app-home", appHome());
-      const result = await exec("python3", args, { timeout: 20000 });
+      const result = await this.runPython(args, { timeout: 20000 });
       if (result.code !== 0) throw new Error(result.stderr?.trim() || `无法查询 ${provider.title}`);
       return provider.parse(result.stdout, Date.now());
     }, () => cx.notify());

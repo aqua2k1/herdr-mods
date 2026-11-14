@@ -1,8 +1,10 @@
+import { pythonRunner, PythonUnavailableError } from "./python.js";
+
 // Transport is injected so this layer can be tested without Herdr or real keys.
-export function credentialService({ exec, writeFile, appHome }) {
+export function credentialService({ exec, writeFile, appHome, runPython = pythonRunner(exec) }) {
   const root = appHome();
   async function command(action, credential, extra = []) {
-    const result = await exec("python3", [
+    const result = await runPython([
       `${root}/mods/subscriptions/helpers/credentials.py`,
       root, action, credential.id, ...extra,
     ], { timeout: 5000 });
@@ -18,7 +20,7 @@ export function credentialService({ exec, writeFile, appHome }) {
         throw new Error("凭据临时文件无效");
       }
       try {
-        // The helper creates a 0600 empty file inside a 0700 directory first.
+        // The helper creates a private empty file (Unix modes or Windows ACL) first.
         // Write only the private draft; the helper atomically publishes it.
         await writeFile(`${root}/data/subscriptions/credentials/${token}`, secret);
         await command("commit", credential, [token]);
@@ -45,8 +47,9 @@ export async function credentialOperation(state, operation, changed) {
   try {
     await operation();
     return true;
-  } catch {
-    state.error = "凭据操作失败，请检查权限或重新输入 API Key";
+  } catch (error) {
+    state.error = error instanceof PythonUnavailableError ? error.message :
+      "凭据操作失败，请检查权限或重新输入 API Key";
     return false;
   } finally {
     state.busy = false;
