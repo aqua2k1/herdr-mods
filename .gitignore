@@ -12,3 +12,6 @@ mods/**/jsconfig.json
 .env.*
 !.env.example
 *.log
+
+# Never track a local runtime credential store
+/data/subscriptions/credentials/

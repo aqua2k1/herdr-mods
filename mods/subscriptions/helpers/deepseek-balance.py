@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
-"""Read-only DeepSeek balance query; credential stays in the helper environment."""
+"""Read-only DeepSeek balance query; credential comes from the shared local store."""
+import argparse
 import json
-import os
 import sys
 import urllib.error
 import urllib.request
+from credentials import app_home, read_credential
 
 URL = "https://api.deepseek.com/user/balance"
 
 
-def main():
-    key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    if not key:
-        print("未配置 DEEPSEEK_API_KEY，请在启动 Herdr 时设置", file=sys.stderr)
+def main(home=None):
+    try:
+        key = read_credential(home or app_home(), "deepseek-api", "DEEPSEEK_API_KEY")
+    except (OSError, ValueError, UnicodeError):
+        print("读取 DeepSeek 凭据失败，请检查文件权限或重新保存", file=sys.stderr)
         return 1
-    if "\n" in key or "\r" in key:
-        print("DEEPSEEK_API_KEY 格式无效", file=sys.stderr)
+    if not key:
+        print("未配置 API Key，请在面板中保存凭据", file=sys.stderr)
         return 1
     request = urllib.request.Request(URL, headers={
         "Authorization": "Bearer " + key,
@@ -63,4 +65,6 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--app-home")
+    sys.exit(main(parser.parse_args().app_home))

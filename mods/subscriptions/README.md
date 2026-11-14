@@ -5,7 +5,7 @@ Provider cards in Herdr's Files/Changes side panel. Implements **Codex subscript
 ## Behavior
 
 - Query each provider once when opening the panel.
-- No polling, refresh button, model prompts, or session-log fallback.
+- No polling, refresh button, model prompts, or session-log fallback. Saving/changing a credential explicitly queries that provider; deleting a local credential queries only if an environment fallback is configured.
 - Reopening queries again; overlapping requests are deduplicated.
 - Failures retain the last successful reading, explicitly labelled as old.
 - Cache is per view, in memory only.
@@ -20,7 +20,15 @@ The helper delegates authentication to Codex, never reads credentials, sends no 
 
 ## DeepSeek API configuration
 
-Set `DEEPSEEK_API_KEY` in the environment inherited by Herdr when it starts. The Python helper sends a read-only `GET https://api.deepseek.com/user/balance` with Bearer authentication. Keys are never passed as command-line arguments, sent to the MOD UI, logged, or persisted by this MOD. No permanent proxy settings are added.
+Enter the API Key in the DeepSeek card's masked input and click **保存并查询**. Once configured, the card offers **更换** and **删除** (with confirmation). No restart is required. Existing saved keys are never read back into the input.
+
+The shared credential store uses `<appHome>/data/subscriptions/credentials/<credential-id>.key` (for DeepSeek: `deepseek-api.key`). Its directory has mode `0700`, and each credential file has mode `0600`. This is **plaintext storage protected by Unix permissions, not encryption**; it does not protect against administrators or other programs running as your user. Do not copy the credential directory into the repository or share it in backups unintentionally.
+
+`helpers/credentials.py` owns metadata checks, secure draft creation, validation, atomic replacement and deletion. `lib/credentials.js` supplies the generic transport and operation state; `lib/credential-panel.js` supplies the reusable masked-input UI. Herdr's exec API has no stdin parameter, so secrets are written only into a helper-created private draft, then committed atomically; they never appear in process arguments. Failed saves discard their draft, deletion removes abandoned drafts for that credential, and drafts older than 24 hours are cleaned on the next status/save operation. A process crash can leave a private draft until then. Delete unlinks files; it is not secure disk erasure.
+
+The balance helper reads credentials internally and sends a read-only `GET https://api.deepseek.com/user/balance`. It returns only balance data, never the key. Keys are not kept in shared state/localStorage or logs. The input is cleared on save/cancel and view teardown. No permanent proxy settings are added.
+
+For compatibility, `DEEPSEEK_API_KEY` in Herdr's startup environment is an optional fallback. A local file takes precedence. The UI labels the credential source; deleting the local file does not delete the environment variable.
 
 Example (enter the key without adding it to shell history, Bash):
 
@@ -31,7 +39,7 @@ herdr-app
 unset DEEPSEEK_API_KEY
 ```
 
-A running app must be relaunched to inherit a newly set variable. Do not paste keys in chat or commit them. A missing key produces an error in the DeepSeek card, without affecting Codex. Every open queries both providers independently; no background polling.
+Only the optional environment-variable method requires relaunching to inherit a new variable. Do not paste keys in chat or commit them. Without any credential, the DeepSeek card shows the input rather than issuing an unauthenticated request; Codex remains independent. Every open queries configured providers independently; no background polling.
 
 Displays each returned currency's total, granted, and topped-up balances and whether the balance is sufficient for API calls. Decimal strings are preserved without floating-point rounding. No reset date, subscription quota, or spending is inferred from a balance.
 
@@ -50,6 +58,18 @@ For an explicit live API test, run `npm run test:live`. This launches your actua
 ## Provider contract
 
 Register adapters in `providers/index.js`. Each adapter has `id`, `title`, `kind` (`subscription` or `api`), `helper` (Python script relative to this MOD) and `parse(stdout, observedAt)`. Each helper runs locally through Python 3. To add another transport, extend the runner explicitly rather than hiding side effects in the renderer.
+
+Providers that need an API credential additionally declare:
+
+```js
+credential: {
+  id: "deepseek-api",          // stable store identifier, lowercase letters/digits/hyphens
+  label: "API Key",
+  env: "DEEPSEEK_API_KEY"      // optional compatibility fallback
+}
+```
+
+The panel handles credential UI, source checks and lifecycle generically. Credential-enabled Python helpers receive `--app-home <path>`; use `read_credential(home, id, env_name)` from `helpers/credentials.py`, never retrieve the existing secret through the JavaScript layer. Replacing a credential invalidates the previous account's cached result immediately. Query failures after saving keep the credential available for correction/deletion.
 
 The parser returns:
 

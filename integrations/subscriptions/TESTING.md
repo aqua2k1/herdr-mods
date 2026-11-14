@@ -33,4 +33,14 @@ Added the fixed HTTPS GET `/user/balance` transport and decimal-string balance m
 
 Installed the updated MOD and inspected `/tmp/herdr-subscriptions-deepseek-test.png`: the independent DeepSeek API block correctly shows a missing-key error, while Codex continues loading successfully. Runtime status reported no errors. This environment has no `DEEPSEEK_API_KEY`, so **no authenticated live DeepSeek balance result has been verified**. HTTP success/error responses are tested with mocks; no real key is embedded in source/tests. Proxy settings were only passed to the test app process.
 
-Not yet verified in the real window: signed-out Codex error state, authenticated DeepSeek balance display, and multi-window operation.
+## Reusable credential management
+
+- `npm test`: 27 top-level tests pass, including Python suites with 7 credential-store and 6 DeepSeek-helper cases. Checks cover file/directory permissions, replacement, environment fallback, traversal/symlinks, invalid drafts preserving the old value, abandoned draft cleanup, and sanitized errors.
+- `herdr-app check` passes for the updated MOD.
+- Installed the updated source and inspected the actual masked-input screen in `/tmp/herdr-credentials-input.png`.
+- Exercised the shared UI and storage transport in a temporary smoke MOD using a dedicated `credential-smoke-test` identifier and fake keys only. Verified masked presentation, save, replacement and deletion with native Herdr file writes, file mode `0600`, directory mode `0700`, and zero remaining smoke drafts. No API was called with a fake key. Temporary smoke MOD/layout block and test credential were removed afterwards.
+- Smoke screenshots: `/tmp/herdr-credential-masked-smoke.png`, `/tmp/herdr-credential-saved-smoke.png`, `/tmp/herdr-credential-delete-confirm.png`.
+- Inspected `/tmp/herdr-credentials-final.png`: the actual DeepSeek card now successfully displays authenticated live balance data and a local-file credential source, with change/delete controls. No saved DeepSeek secret was read back for inspection. Runtime status reported no errors.
+- Proxy variables remained limited to the test app process.
+
+Not yet verified in the real window: signed-out Codex error state and multi-window operation.

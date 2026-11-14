@@ -13,7 +13,7 @@ const row = (title, value) => h_flex().gap(8).justify_between().items_center()
   .child(div().flex_1().min_w(0).child(title))
   .child(div().flex_none().child(value));
 
-export function providerBlock(provider, state, t) {
+export function providerBlock(provider, state, t, credentialContent = null) {
   const snapshot = state.snapshot;
   const card = v_flex().id(provider.id).flex_none().p(12).gap(12)
     .rounded(8).border(1).border_color(t.border).bg(t.surface)
@@ -21,7 +21,7 @@ export function providerBlock(provider, state, t) {
   if (snapshot?.tier) card.child(div().text_color(t.muted).child(snapshot.tier));
   if (state.status === "loading") card.child(div().text_color(t.dim).child("正在查询…"));
   if (state.error) card.child(div().text_color(t.ansi1).child(`查询失败：${state.error}`));
-  if (!snapshot && state.status === "idle") card.child(div().text_color(t.dim).child("打开面板时查询"));
+  if (!snapshot && state.status === "idle" && !credentialContent) card.child(div().text_color(t.dim).child("打开面板时查询"));
   if (snapshot) {
     const body = v_flex().gap(12).opacity(state.status === "ready" ? 1 : 0.55);
     for (const quota of snapshot.quotas ?? []) {
@@ -74,5 +74,6 @@ export function providerBlock(provider, state, t) {
     card.child(body).child(div().text_size(11).text_color(t.dim)
       .child(`${state.status === "ready" ? "查询于" : "上次结果 ·"} ${dateTime(snapshot.observedAt)}`));
   }
+  if (credentialContent) card.child(div().h(1).bg(t.border)).child(credentialContent);
   return card;
 }
