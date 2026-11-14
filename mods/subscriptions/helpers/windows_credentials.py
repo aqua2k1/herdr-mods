@@ -335,6 +335,46 @@ def secure(path):
         _CloseHandle(handle)
 
 
+def ensure_directory(path):
+    """Migrate an owned, inherited directory ACL before validating it.
+
+    Existing Windows app directories commonly inherit their ACL. Tighten those
+    directories to our protected user/System ACL on first use. Already protected
+    ACLs remain subject to strict validation, so later broad grants are rejected.
+    Null DACLs, foreign owners, reparse points and unsupported filesystems fail
+    closed. Only directory metadata is inspected; credential contents are not read.
+    """
+    token, owner_token = _current_user(), _current_owner()
+    user = _user_sid(token)
+    handle = _open(path, _READ_CONTROL | _FILE_READ_ATTRIBUTES)
+    descriptor = _PTR()
+    try:
+        info = _file_info(handle)
+        if not info.dwFileAttributes & _FILE_ATTRIBUTE_DIRECTORY:
+            raise ValueError("credential directory is not a directory")
+        _require_owner(handle, user, _TOKEN_OWNER.from_buffer(owner_token).Owner)
+        dacl = _PTR()
+        error = _GetSecurityInfo(
+            handle, 1, _DACL_SECURITY_INFORMATION, None, None,
+            ctypes.byref(dacl), None, ctypes.byref(descriptor),
+        )
+        if error:
+            raise ctypes.WinError(error)
+        control, revision = w.WORD(), _DWORD()
+        _check(_GetSecurityDescriptorControl(descriptor, ctypes.byref(control),
+                                             ctypes.byref(revision)))
+        if not control.value & _SE_DACL_PRESENT or not dacl.value:
+            raise ValueError("credential directory has a null DACL")
+        if not control.value & _SE_DACL_PROTECTED:
+            # The open metadata handle denies replacement while secure() works.
+            secure(path)
+        _validate_handle(handle, user)
+    finally:
+        if descriptor.value:
+            _LocalFree(descriptor)
+        _CloseHandle(handle)
+
+
 def validate(path):
     """Reject unsafe ownership, DACLs, filesystems and final reparse points.
 

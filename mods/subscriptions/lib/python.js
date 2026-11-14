@@ -20,6 +20,7 @@ export function pythonRunner(exec) {
   return async (args, options) => {
     if (!interpreter) interpreter = discover().catch(error => { interpreter = undefined; throw error; });
     const { command, prefix } = await interpreter;
-    return exec(command, [...prefix, ...args], options);
+    // Force redirected Python output to UTF-8 even on legacy Windows locales.
+    return exec(command, [...prefix, "-X", "utf8", ...args], options);
   };
 }

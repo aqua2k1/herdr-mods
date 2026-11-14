@@ -51,4 +51,12 @@ Not yet verified in the real window: signed-out Codex error state and multi-wind
 - Added native Windows owner/DACL validation and protected draft ACLs; reads validate the actual file handle and reject reparse points. POSIX checks are unchanged.
 - Linux `npm test` passes 32 top-level tests, including interpreter fallback and mocked Windows-backend routing/cleanup. The credential suite has 11 cases; two native Windows cases are skipped on Linux. `herdr-app check` also passes for the modified MOD.
 - Added `.github/workflows/credentials.yml` to run the focused credential/interpreter tests on Linux, macOS and Windows. Windows-only tests exercise broad-ACL rejection and directory-junction rejection using fake secrets.
-- Native Windows execution and Windows Herdr UI have **not** been verified locally. CI results must be checked before treating the native ACL path as validated. The Codex pipe helper remains macOS/Linux-only.
+- Native Windows execution and Windows Herdr UI have **not** been verified locally. CI results must be checked before treating the native ACL path as validated.
+
+### Follow-up from native Windows error reports
+
+The first Windows report exposed an initial-status failure for an already-existing `data/subscriptions` directory with inherited ACLs. Status now migrates owned inherited directory ACLs to protected user/System ACLs before validating them. Already-protected broad grants are still rejected. A Windows-only regression starts with inherited directories and checks status, save and read.
+
+Codex now initializes Winsock before Windows process creation and uses bounded threaded pipe reads instead of POSIX selectors. Tests launch a `.py` fake explicitly through Python, avoiding shebang/WinError 193 failures. Standard Windows npm shims are resolved to Node and `codex.js` without invoking a shell; nonstandard batch wrappers are rejected. Python helper invocations use `-X utf8`, and the Codex helper explicitly configures UTF-8 streams.
+
+After these fixes, Linux `npm test` passes **37 top-level tests**, including the real 15-second timeout/cleanup test; `herdr-app check` passes. The credential suite has 12 cases, with three Windows-native cases skipped on Linux. CI now runs all subscription tests across the three OSes, not just credential tests. Native Windows execution of these follow-up fixes is still pending.

@@ -10,7 +10,7 @@ test("Python interpreter discovery is cached and shared by concurrent calls", as
   });
   await Promise.all([run(["helper.py", "status"], { timeout: 123 }), run(["balance.py"])]);
   assert.equal(calls.filter(c => c.args[0] === "-c").length, 1);
-  assert.deepEqual(calls[1], { command: "python3", args: ["helper.py", "status"], options: { timeout: 123 } });
+  assert.deepEqual(calls[1], { command: "python3", args: ["-X", "utf8", "helper.py", "status"], options: { timeout: 123 } });
 });
 
 test("Windows launcher fallback uses py -3 and preserves paths with spaces", async () => {
@@ -23,7 +23,7 @@ test("Windows launcher fallback uses py -3 and preserves paths with spaces", asy
   });
   const args = ["C:\\Users\\Test User\\credentials.py", "C:\\Users\\Test User", "status"];
   assert.equal((await run(args)).stdout, "done");
-  assert.deepEqual(calls.at(-1), ["py", ["-3", ...args]]);
+  assert.deepEqual(calls.at(-1), ["py", ["-3", "-X", "utf8", ...args]]);
 });
 
 test("failed helper operations are never retried with another interpreter", async () => {

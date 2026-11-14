@@ -6,7 +6,7 @@ import { credentialService, initialCredentialState, credentialOperation } from "
 import { PythonUnavailableError } from "../lib/python.js";
 
 test("Python credential store: modes, atomic updates, deletion, fallback, traversal and secret safety", () => {
-  const result = spawnSync(process.platform === "win32" ? "python" : "python3", [fileURLToPath(new URL("./credentials-store.py", import.meta.url))],
+  const result = spawnSync(process.platform === "win32" ? "python" : "python3", ["-X", "utf8", fileURLToPath(new URL("./credentials-store.py", import.meta.url))],
     { encoding: "utf8", timeout: 5000 });
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
@@ -18,6 +18,7 @@ function fakeTransport({ failWrite = false } = {}) {
     appHome: () => "/private/herdr",
     exec: async (command, args) => {
       if (args[0] === "-c") return { code: 0, stdout: "herdr-python-ok\n" };
+      args = args.slice(2); // Python runner adds -X utf8.
       calls.push({ command, args });
       const action = args[2];
       const result = action === "prepare" ? { token: ".deepseek-api-test.pending" } :

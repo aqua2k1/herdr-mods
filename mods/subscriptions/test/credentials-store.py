@@ -112,7 +112,7 @@ class CredentialTests(unittest.TestCase):
             self.store.delete(self.credential_id)
             self.assertFalse(self.store.status(self.credential_id)["configured"])
         self.assertTrue(backend.secure.called)
-        self.assertTrue(backend.validate.called)
+        self.assertTrue(backend.ensure_directory.called)
         self.assertTrue(backend.open_private.called)
 
     @unittest.skipIf(os.name == "nt", "mock routing tested on POSIX")
@@ -126,6 +126,19 @@ class CredentialTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 self.store.prepare(self.credential_id)
         self.assertEqual(list(self.store.root.glob("*.pending")), [])
+
+    @unittest.skipUnless(os.name == "nt", "Windows ACL migration")
+    def test_windows_status_migrates_existing_inherited_directories(self):
+        self.store.root.mkdir(parents=True)
+        # Simulate directories left by the host or an older installation.
+        for path in (self.store.root.parent, self.store.root):
+            result = subprocess.run(["icacls", str(path), "/inheritance:e"], capture_output=True)
+            self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.store.status(self.credential_id), {"configured": False, "source": None})
+        windows_security.validate(self.store.root.parent)
+        windows_security.validate(self.store.root)
+        self.save()
+        self.assertEqual(self.store.read(self.credential_id), "test-only-secret")
 
     @unittest.skipUnless(os.name == "nt", "Windows ACL integration")
     def test_windows_rejects_broad_acl_and_can_restore_private_acl(self):

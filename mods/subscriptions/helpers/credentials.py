@@ -60,7 +60,7 @@ class CredentialStore:
                     if create:
                         windows_security.secure(path)
                     else:
-                        windows_security.validate(path)
+                        windows_security.ensure_directory(path)
         elif create:
             os.chmod(self.root.parent, 0o700)
             os.chmod(self.root, 0o700)
