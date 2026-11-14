@@ -1,6 +1,8 @@
 # Desktop notifications
 
-A replacement toast MOD: every existing Herdr notification keeps its in-app UI, and also runs a local OS notification script **only if the window is inactive when the toast initializes**.
+![Herdr desktop notification preview](preview.png)
+
+When the Herdr window is inactive, send the title and body of Herdr's in-window toast to the system notification center on **Windows, Linux, and macOS**.
 
 No OSC parsing, status polling, timers, host source changes or remote execution. The original toast's click action and machine-login copy button are preserved. Merely switching away does not replay old notifications. An overlay ID is recorded in that copy's localStorage before delivery so reinitialization does not resend it; message contents are not persisted by this MOD.
 
@@ -39,6 +41,33 @@ Respect `HERDR_APP_HOME` / `XDG_CONFIG_HOME`; the default is `~/.config/herdr-ap
 | Linux under WSL | `powershell.exe`, `wslpath` and standard `od`/`tr` utilities; uses the Windows script |
 | macOS | `terminal-notifier`; a Herdr-specific group replaces the previous system notification; OS controls dismissal |
 | Windows | Windows PowerShell / WinRT and a registered Herdr or Windows Terminal Start-menu identity |
+
+**Linux setup**
+
+Install `notify-send` using your distribution's package manager:
+
+```sh
+# Debian / Ubuntu
+sudo apt install libnotify-bin
+
+# Fedora
+sudo dnf install libnotify
+
+# Arch Linux
+sudo pacman -S libnotify
+```
+
+A running desktop notification daemon is also required. Most full desktop environments include one; minimal window-manager setups may need a daemon such as `mako` or `dunst` configured separately.
+
+**macOS setup**
+
+Install the required notification tool:
+
+```sh
+brew install terminal-notifier
+```
+
+Allow notifications for terminal-notifier in **System Settings → Notifications**. This MOD requires `terminal-notifier`; it has no AppleScript fallback.
 
 Windows prefers Herdr's identity, falling back to Windows Terminal for unpackaged/WSL installs. In the fallback case Windows labels the notification as Terminal. Its fixed Herdr tag/group replaces the previous toast, with one-minute expiry.
 
