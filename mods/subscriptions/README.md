@@ -47,6 +47,14 @@ Official schema: https://api-docs.deepseek.com/api/get-user-balance/
 
 ## Install
 
+### With your Herdr agent
+
+```text
+Read ~/.config/herdr-app/AGENTS.md, then add this mod alongside Files and Changes: https://github.com/aqua2k1/herdr-mods/tree/main/mods/subscriptions
+```
+
+### Manual installation
+
 Copy this directory to your Herdr home as `mods/subscriptions/` (do not symlink). A default path is `~/.config/herdr-app/mods/subscriptions/`; respect `HERDR_APP_HOME` / `XDG_CONFIG_HOME` if configured.
 
 Follow [side-panel integration](../../integrations/subscriptions/README.md). Installing the directory alone does not add the navigation button.
