@@ -1,6 +1,6 @@
 # Status-bar popover integration
 
-This is an alternative to the [side-panel integration](README.md). The status bar shows a Subscriptions icon and label, never quota or balance summaries. Clicking it opens the existing detail cards above the button, without resizing terminals or changing Files/Changes.
+The status bar shows a Subscriptions icon and label, never quota or balance summaries. Clicking it opens the existing detail cards above the button, without resizing terminals or changing Files/Changes.
 
 These are manual instructions, not changes to your personal configuration. Install `mods/subscriptions/` into your Herdr home first. Back up your layout; clone a shipped layout before editing it:
 
@@ -33,10 +33,7 @@ In your personal layout, replace the `status` block with a row holding the exist
       "background": "chrome",
       "border": { "width": 1, "color": "border" },
       "padding": [2, 4],
-      "content": {
-        "mod": "subscriptions",
-        "props": { "presentation": "statusbar" }
-      }
+      "content": { "mod": "subscriptions" }
     }
   ]
 }
@@ -52,7 +49,7 @@ This does not need a cloned status MOD or tabs MOD. Its layout block ID is arbit
 - Initial mount and redraws do not query. Each closed-to-open transition queries configured providers once; in-flight requests are deduplicated. No polling.
 - Closing keeps the last result in the view's memory and clears unsaved API-key input and delete confirmation. An already-running query may finish while closed; closing does not start new queries.
 - Credential save/delete behavior is unchanged. Secrets are never placed in shared state.
-- The original sidebar presentation remains the default when `presentation` is omitted. Separate copies have independent caches and request lifecycles; normally install just one presentation.
+- The status-bar popover is the only presentation. No `presentation` prop is needed (an existing `presentation: "statusbar"` prop is harmless but unnecessary). Install just one copy; separate copies have independent caches and request lifecycles.
 
 ## Verify
 

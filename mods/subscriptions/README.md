@@ -1,10 +1,10 @@
 # Subscriptions
 
-Provider cards in Herdr's Files/Changes side panel, or a detail popover opened from a status-bar icon. Implements **Codex subscriptions** and **DeepSeek API balance**. API balance is distinct from spending/budgets; it does not invent an expense total or usage percentage.
+Provider cards in a floating detail popover opened from Herdr's status-bar Subscriptions button. Implements **Codex subscriptions** and **DeepSeek API balance**. API balance is distinct from spending/budgets; it does not invent an expense total or usage percentage.
 
 ## Behavior
 
-- Query each provider once when opening the panel or status-bar popover. The status bar itself shows an icon and Subscriptions label, not a usage summary.
+- Query each provider once when opening the status-bar popover. The status bar itself shows an icon and Subscriptions label, not a usage summary.
 - No polling, refresh button, model prompts, or session-log fallback. Saving/changing a credential explicitly queries that provider; deleting a local credential queries only if an environment fallback is configured.
 - Reopening queries again; overlapping requests are deduplicated.
 - Failures retain the last successful reading, explicitly labelled as old.
@@ -52,18 +52,18 @@ Official schema: https://api-docs.deepseek.com/api/get-user-balance/
 ### With your Herdr agent
 
 ```text
-Read ~/.config/herdr-app/AGENTS.md, then add this mod alongside Files and Changes: https://github.com/aqua2k1/herdr-mods/tree/main/mods/subscriptions
+Read ~/.config/herdr-app/AGENTS.md, then add this mod as a status-bar button opening floating details (no Files/Changes side-panel entry): https://github.com/aqua2k1/herdr-mods/tree/main/mods/subscriptions
 ```
 
 ### Manual installation
 
 Copy this directory to your Herdr home as `mods/subscriptions/` (do not symlink). A default path is `~/.config/herdr-app/mods/subscriptions/`; respect `HERDR_APP_HOME` / `XDG_CONFIG_HOME` if configured.
 
-Choose [status-bar popover integration](../../integrations/subscriptions/STATUSBAR.md) (icon and label open floating details without changing layout geometry) or [side-panel integration](../../integrations/subscriptions/README.md). Installing the directory alone does not add either button. Status-bar mode uses layout props `{ "presentation": "statusbar" }`; omitting this preserves sidebar mode.
+Follow [status-bar popover integration](../../integrations/subscriptions/STATUSBAR.md): the icon and label open floating details without changing layout geometry. Installing the directory alone does not add the button. No presentation prop is required. The old side-panel mode is removed; existing installations must remove the Subscriptions side-panel entry and tabs open observer as described in the integration guide.
 
 Run `herdr-app check /absolute/path/to/mods/subscriptions` and `npm test` from the repository root.
 
-For an explicit live API test, run `npm run test:live`. This launches your actual signed-in Codex CLI, validates the normalized quotas and prints display data only. It is not included in the default unit tests and sends no model prompt. A passing live query/check is not proof of the sidebar open/close behavior; that still requires a running Herdr window.
+For an explicit live API test, run `npm run test:live`. This launches your actual signed-in Codex CLI, validates the normalized quotas and prints display data only. It is not included in the default unit tests and sends no model prompt. A passing live query/check is not proof of the popover open/close behavior; that still requires a running Herdr window.
 
 ## Icons
 
@@ -110,4 +110,4 @@ The parser returns:
 
 Unknown quota windows are displayed dynamically. Missing values are not zeroes. API budgets are not subscription limits. Do not manufacture consumption percentages from model token counts.
 
-In sidebar mode, visibility integration targets the layout block ID `subscriptions`. The token `subscriptions.open` is emitted by the tabs integration; it is only a UI event counter, not a credential. Status-bar mode instead tracks native Popover open transitions locally and does not depend on the layout block ID or tabs events.
+Native Popover open transitions trigger queries locally. The layout block ID is arbitrary; no shared open token, tabs command listener or sidebar visibility integration is used.

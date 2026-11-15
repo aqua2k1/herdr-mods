@@ -5,26 +5,22 @@ import { runInNewContext } from "node:vm";
 import { PROVIDERS } from "../providers/index.js";
 import { initialState } from "../lib/state.js";
 import { credentialOperation } from "../lib/credentials.js";
-import { OPEN_KEY, panelVisible, shouldLoad } from "../lib/visibility.js";
 
 // Exercise the actual View lifecycle without GPUI or authenticated helper calls.
 const source = readFileSync(new URL("../main.js", import.meta.url), "utf8")
   .replace(/^import .*;\n/gm, "")
   .replace("export default class", "class");
-function fixture(props = {}, root = null) {
+function fixture() {
   const spawned = [];
   const inputs = [];
-  const elements = [];
   const element = () => {
     const calls = [];
     const el = new Proxy({ calls }, { get: (target, name) => name === "calls" ? calls :
       (...args) => { calls.push([name, ...args]); return el; } });
-    elements.push(el);
     return el;
   };
   const Subscriptions = runInNewContext(`${source}\nSubscriptions`, {
-    View: class {}, PROVIDERS, initialState, OPEN_KEY, panelVisible, shouldLoad,
-    props: () => props, shared: () => 0, layout: () => root,
+    View: class {}, PROVIDERS, initialState,
     pythonRunner: () => () => { throw new Error("unexpected helper call"); },
     exec() {}, writeFile() {}, appHome: () => "/unused",
     credentialService: () => ({}), credentialOperation,
@@ -40,43 +36,41 @@ function fixture(props = {}, root = null) {
   });
   const cx = { spawn: fn => spawned.push(fn), notify() {} };
   const view = new Subscriptions();
-  // Real Herdr passes layout props through herdr.props(), not the init argument.
   view.init(undefined, cx);
-  return { view, cx, spawned, inputs, elements };
+  return { view, cx, spawned, inputs };
 }
 
-test("statusbar never queries on mount or closed open commands", () => {
-  const { view, spawned, cx } = fixture({ presentation: "statusbar" });
-  assert.equal(spawned.length, 1); // command listener only
-  view.onOpen(cx);
+test("statusbar is the only presentation and never queries on mount or redraw", () => {
+  const { view, spawned } = fixture();
+  const calls = view.render().calls;
+  assert.ok(calls.some(([method]) => method === "trigger"));
   view.render();
-  assert.equal(spawned.length, 1);
+  assert.equal(spawned.length, 0);
 });
 
-test("popover queries once per opening, independently of sidebar layout", () => {
-  const { view, cx, spawned } = fixture({ presentation: "statusbar" });
+test("popover queries once per opening without layout props or sidebar events", () => {
+  const { view, cx, spawned } = fixture();
   view.setPopoverOpen(true, cx);
-  assert.equal(spawned.length, 1 + PROVIDERS.length);
+  assert.equal(spawned.length, PROVIDERS.length);
   view.setPopoverOpen(true, cx);
-  view.onOpen(cx);
   view.render();
-  assert.equal(spawned.length, 1 + PROVIDERS.length);
+  assert.equal(spawned.length, PROVIDERS.length);
   view.setPopoverOpen(false, cx);
-  view.onOpen(cx);
-  assert.equal(spawned.length, 1 + PROVIDERS.length);
+  view.render();
+  assert.equal(spawned.length, PROVIDERS.length);
   view.setPopoverOpen(true, cx);
-  assert.equal(spawned.length, 1 + 2 * PROVIDERS.length);
+  assert.equal(spawned.length, 2 * PROVIDERS.length);
 });
 
 test("reopening while loading does not duplicate provider requests", () => {
-  const { view, cx, spawned } = fixture({ presentation: "statusbar" });
+  const { view, cx, spawned } = fixture();
   for (const state of Object.values(view.states)) state.status = "loading";
   view.setPopoverOpen(true, cx);
-  assert.equal(spawned.length, 1);
+  assert.equal(spawned.length, 0);
 });
 
 test("closing clears unsaved credentials and delete confirmation", () => {
-  const { view, cx, inputs } = fixture({ presentation: "statusbar" });
+  const { view, cx, inputs } = fixture();
   view.setPopoverOpen(true, cx);
   for (const input of inputs) input.set_value("unsaved-secret");
   for (const state of Object.values(view.credentials)) {
@@ -89,7 +83,7 @@ test("closing clears unsaved credentials and delete confirmation", () => {
 });
 
 test("statusbar renders an anchored controlled popover with native dismissal", () => {
-  const { view } = fixture({ presentation: "statusbar" });
+  const { view } = fixture();
   const calls = view.render().calls;
   assert.ok(calls.some(([method, value]) => method === "open" && value === false));
   assert.ok(calls.some(([method, value]) => method === "anchor" && value === "bottom_right"));
@@ -100,7 +94,7 @@ test("statusbar renders an anchored controlled popover with native dismissal", (
 });
 
 test("popover content stops presses from reaching the trigger toggle", () => {
-  const { view, cx } = fixture({ presentation: "statusbar" });
+  const { view, cx } = fixture();
   view.setPopoverOpen(true, cx);
   const calls = view.render().calls;
   const trigger = calls.find(([method]) => method === "trigger")[1];
@@ -114,7 +108,7 @@ test("popover content stops presses from reaching the trigger toggle", () => {
 });
 
 test("saving a credential queries the provider without closing the popover", async () => {
-  const { view, cx, spawned } = fixture({ presentation: "statusbar" });
+  const { view, cx, spawned } = fixture();
   const provider = PROVIDERS.find(p => p.credential);
   view.setPopoverOpen(true, cx);
   view.inputs[provider.id].set_value("test-secret");
@@ -129,10 +123,4 @@ test("saving a credential queries the provider without closing the popover", asy
   assert.equal(view.popoverOpen, true);
   assert.equal(view.credentials[provider.id].configured, true);
   assert.equal(view.inputs[provider.id].text, "");
-});
-
-test("default presentation retains sidebar visibility gating", () => {
-  assert.equal(fixture().spawned.length, 1);
-  const root = { id: "subscriptions" };
-  assert.equal(fixture({}, root).spawned.length, 1 + PROVIDERS.length);
 });

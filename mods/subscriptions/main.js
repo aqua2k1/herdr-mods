@@ -1,20 +1,17 @@
 import { View, div, svg } from "gpui-kit";
 import { InputState, Popover, v_flex } from "gpui-base";
-import { appHome, exec, layout, nextCommand, props, shared, theme } from "herdr";
+import { appHome, exec, theme } from "herdr";
 import { writeFile } from "fs/promises";
 import { PROVIDERS } from "./providers/index.js";
 import { initialState, loadProvider } from "./lib/state.js";
 import { providerBlock } from "./lib/provider-block.js";
-import { OPEN_KEY, panelVisible, shouldLoad } from "./lib/visibility.js";
 import { credentialService, credentialOperation, initialCredentialState } from "./lib/credentials.js";
 import { credentialPanel } from "./lib/credential-panel.js";
 import { pythonRunner } from "./lib/python.js";
 
 export default class Subscriptions extends View {
-  init(_props, cx) {
-    this.statusbar = props()?.presentation === "statusbar";
+  init() {
     this.popoverOpen = false;
-    this.openToken = 0;
     this.states = Object.fromEntries(PROVIDERS.map(p => [p.id, initialState()]));
     this.credentials = {};
     this.inputs = {};
@@ -27,21 +24,9 @@ export default class Subscriptions extends View {
       input.on("submit", (_event, cx) => this.saveCredential(provider, cx));
       this.inputs[provider.id] = input;
     }
-    this.lastOpen = null;
-    this.onOpen(cx);
-    cx.spawn(async cx => {
-      for (;;) {
-        const command = await nextCommand();
-        if (command === "open") this.onOpen(cx);
-      }
-    });
   }
 
-  onOpen(cx) {
-    const token = this.statusbar ? this.openToken : shared(OPEN_KEY) ?? 0;
-    const visible = this.statusbar ? this.popoverOpen : panelVisible(layout());
-    if (!shouldLoad(visible, token, this.lastOpen)) return;
-    this.lastOpen = token;
+  loadProviders(cx) {
     for (const provider of PROVIDERS) {
       if (this.credentials[provider.id]?.busy || this.states[provider.id].status === "loading") continue;
       cx.spawn(async cx => {
@@ -66,8 +51,7 @@ export default class Subscriptions extends View {
     if (open === this.popoverOpen) return;
     this.popoverOpen = open;
     if (open) {
-      this.openToken += 1;
-      this.onOpen(cx);
+      this.loadProviders(cx);
     } else {
       // Do not leave an unsaved secret or a destructive confirmation in a hidden surface.
       for (const provider of PROVIDERS.filter(p => p.credential)) {
@@ -151,7 +135,6 @@ export default class Subscriptions extends View {
 
   render() {
     const t = theme();
-    if (!this.statusbar) return this.renderDetails(t);
     return Popover.new("subscriptions-popover")
       .open(this.popoverOpen).anchor("bottom_right").overlay_closable(true)
       .on_open_change((open, cx) => this.setPopoverOpen(open, cx))

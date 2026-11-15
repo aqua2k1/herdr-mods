@@ -10,7 +10,7 @@ Independent, self-contained MODs in `mods/<name>/`.
 ### Subscriptions
 
 ```text
-Read ~/.config/herdr-app/AGENTS.md, then add this mod alongside Files and Changes: https://github.com/aqua2k1/herdr-mods/tree/main/mods/subscriptions
+Read ~/.config/herdr-app/AGENTS.md, then add this mod as a status-bar button opening floating details (no Files/Changes side-panel entry): https://github.com/aqua2k1/herdr-mods/tree/main/mods/subscriptions
 ```
 
 ### Desktop notifications

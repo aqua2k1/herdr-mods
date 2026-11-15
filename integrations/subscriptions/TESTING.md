@@ -61,6 +61,10 @@ Codex now initializes Winsock before Windows process creation and uses bounded t
 
 After these fixes, Linux `npm test` passes **37 top-level tests**, including the real 15-second timeout/cleanup test; `herdr-app check` passes. The credential suite has 12 cases, with three Windows-native cases skipped on Linux. CI now runs all subscription tests across the three OSes, not just credential tests. Native Windows execution of these follow-up fixes is still pending.
 
+## Current integration
+
+Subscriptions now supports only the status-bar popover. The former sidebar visibility helper, shared open token, command listener and sidebar tests have been removed. Earlier sidebar sections below/above are historical test records, not current integration instructions. Use [STATUSBAR.md](STATUSBAR.md) to install or migrate.
+
 ## Status-bar popover: real-window smoke test
 
 - Started a real Herdr window under an isolated `HERDR_APP_HOME` (`/tmp/herdr-popover-live.NCcWiY`) using a copy of the main layout with the status-bar integration. Personal layout/configuration was not edited.
