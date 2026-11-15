@@ -1,10 +1,10 @@
 # Subscriptions
 
-Provider cards in Herdr's Files/Changes side panel. Implements **Codex subscriptions** and **DeepSeek API balance**. API balance is distinct from spending/budgets; it does not invent an expense total or usage percentage.
+Provider cards in Herdr's Files/Changes side panel, or a detail popover opened from a status-bar icon. Implements **Codex subscriptions** and **DeepSeek API balance**. API balance is distinct from spending/budgets; it does not invent an expense total or usage percentage.
 
 ## Behavior
 
-- Query each provider once when opening the panel.
+- Query each provider once when opening the panel or status-bar popover. The status bar itself shows an icon and Subscriptions label, not a usage summary.
 - No polling, refresh button, model prompts, or session-log fallback. Saving/changing a credential explicitly queries that provider; deleting a local credential queries only if an environment fallback is configured.
 - Reopening queries again; overlapping requests are deduplicated.
 - Failures retain the last successful reading, explicitly labelled as old.
@@ -59,7 +59,7 @@ Read ~/.config/herdr-app/AGENTS.md, then add this mod alongside Files and Change
 
 Copy this directory to your Herdr home as `mods/subscriptions/` (do not symlink). A default path is `~/.config/herdr-app/mods/subscriptions/`; respect `HERDR_APP_HOME` / `XDG_CONFIG_HOME` if configured.
 
-Follow [side-panel integration](../../integrations/subscriptions/README.md). Installing the directory alone does not add the navigation button.
+Choose [status-bar popover integration](../../integrations/subscriptions/STATUSBAR.md) (icon and label open floating details without changing layout geometry) or [side-panel integration](../../integrations/subscriptions/README.md). Installing the directory alone does not add either button. Status-bar mode uses layout props `{ "presentation": "statusbar" }`; omitting this preserves sidebar mode.
 
 Run `herdr-app check /absolute/path/to/mods/subscriptions` and `npm test` from the repository root.
 
@@ -110,4 +110,4 @@ The parser returns:
 
 Unknown quota windows are displayed dynamically. Missing values are not zeroes. API budgets are not subscription limits. Do not manufacture consumption percentages from model token counts.
 
-Visibility integration targets the layout block ID `subscriptions`. The token `subscriptions.open` is emitted by the tabs integration; it is only a UI event counter, not a credential.
+In sidebar mode, visibility integration targets the layout block ID `subscriptions`. The token `subscriptions.open` is emitted by the tabs integration; it is only a UI event counter, not a credential. Status-bar mode instead tracks native Popover open transitions locally and does not depend on the layout block ID or tabs events.

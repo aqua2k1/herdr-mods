@@ -1,6 +1,6 @@
-import { View, div } from "gpui-kit";
-import { InputState, v_flex } from "gpui-base";
-import { appHome, exec, layout, nextCommand, shared, theme } from "herdr";
+import { View, div, svg } from "gpui-kit";
+import { InputState, Popover, v_flex } from "gpui-base";
+import { appHome, exec, layout, nextCommand, props, shared, theme } from "herdr";
 import { writeFile } from "fs/promises";
 import { PROVIDERS } from "./providers/index.js";
 import { initialState, loadProvider } from "./lib/state.js";
@@ -12,6 +12,9 @@ import { pythonRunner } from "./lib/python.js";
 
 export default class Subscriptions extends View {
   init(_props, cx) {
+    this.statusbar = props()?.presentation === "statusbar";
+    this.popoverOpen = false;
+    this.openToken = 0;
     this.states = Object.fromEntries(PROVIDERS.map(p => [p.id, initialState()]));
     this.credentials = {};
     this.inputs = {};
@@ -35,8 +38,9 @@ export default class Subscriptions extends View {
   }
 
   onOpen(cx) {
-    const token = shared(OPEN_KEY) ?? 0;
-    if (!shouldLoad(panelVisible(layout()), token, this.lastOpen)) return;
+    const token = this.statusbar ? this.openToken : shared(OPEN_KEY) ?? 0;
+    const visible = this.statusbar ? this.popoverOpen : panelVisible(layout());
+    if (!shouldLoad(visible, token, this.lastOpen)) return;
     this.lastOpen = token;
     for (const provider of PROVIDERS) {
       if (this.credentials[provider.id]?.busy || this.states[provider.id].status === "loading") continue;
@@ -56,6 +60,22 @@ export default class Subscriptions extends View {
         await this.queryProvider(provider, cx);
       });
     }
+  }
+
+  setPopoverOpen(open, cx) {
+    if (open === this.popoverOpen) return;
+    this.popoverOpen = open;
+    if (open) {
+      this.openToken += 1;
+      this.onOpen(cx);
+    } else {
+      // Do not leave an unsaved secret or a destructive confirmation in a hidden surface.
+      for (const provider of PROVIDERS.filter(p => p.credential)) {
+        this.inputs[provider.id].set_value("");
+        Object.assign(this.credentials[provider.id], { editing: false, confirmDelete: false });
+      }
+    }
+    cx.notify();
   }
 
   async queryProvider(provider, cx) {
@@ -131,6 +151,25 @@ export default class Subscriptions extends View {
 
   render() {
     const t = theme();
+    if (!this.statusbar) return this.renderDetails(t);
+    return Popover.new("subscriptions-popover")
+      .open(this.popoverOpen).anchor("bottom_right").overlay_closable(true)
+      .on_open_change((open, cx) => this.setPopoverOpen(open, cx))
+      .trigger(div().id("subscriptions-toggle").h(22).px(6).gap(6).flex_none()
+        .flex().items_center().justify_center().rounded(4).text_size(12)
+        .text_color(this.popoverOpen ? t.foreground : t.muted)
+        .hover(el => el.bg(t.hover)).tooltip("Subscriptions")
+        .accessibility_label("Subscriptions")
+        .child(svg("mods/subscriptions/icon.svg").size(16).flex_none())
+        .child("Subscriptions"))
+      .content(this.renderDetails(t).w(360).h(480)
+        // Popup content is beneath the trigger in the event tree. Keep presses on
+        // inner controls from bubbling to Popover's mouse-down toggle handler.
+        .on_mouse_down("left", (_event, cx) => cx.stop_propagation())
+        .border(1).border_color(t.border).rounded(8).shadow_lg());
+  }
+
+  renderDetails(t) {
     return v_flex().size_full().min_h(0).bg(t.chrome).text_color(t.foreground).text_size(12)
       .child(div().px(14).py(12).font_semibold().child("Subscriptions"))
       .child(v_flex().id("providers").flex_1().min_h(0).p(12).gap(12).overflow_y_scrollbar()

@@ -1,5 +1,7 @@
 # Side-panel integration
 
+For an icon-and-label status-bar button that opens floating details without resizing the layout, use [status-bar popover integration](STATUSBAR.md) instead.
+
 These changes are **manual instructions**, not applied to your personal Herdr configuration. Back up your layout and clone the shipped tabs MOD with `mod.clone` before editing it (consult `herdr-app commands` for your version's arguments). Point the layout's tabs block to your clone.
 
 ## 1. Layout
