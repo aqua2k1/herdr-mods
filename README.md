@@ -2,10 +2,15 @@
 
 Independent, self-contained MODs in `mods/<name>/`.
 
+- [Files Plus](mods/files-plus/README.md): native Files enhancement with code/Markdown, zoomable PNG/JPEG and optional PDF preview; bounded remote media, no Git badges. See the [verification record](mods/files-plus/TESTING.md) for platform coverage.
 - [Subscriptions](mods/subscriptions/README.md): provider cards; Codex subscription quotas/reset cards and DeepSeek API balance, queried only when opened.
 - [Desktop notifications](mods/desktop-notifications/README.md): forwards existing toasts to the OS while Herdr is inactive, without changing the host.
 
 ## Install
+
+### Files Plus
+
+Copy `mods/files-plus/` into your Herdr home, run `herdr-app check` and replace the Files reference in a personal layout. See [integration steps](integrations/files-plus/README.md) and [optional PDF dependencies](mods/files-plus/README.md#optional-pdf-dependencies).
 
 ### Subscriptions
 

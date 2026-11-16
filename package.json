@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test mods/*/test/*.test.js",
-    "test:live": "node scripts/test-codex-live.mjs"
+    "test:live": "node scripts/test-codex-live.mjs",
+    "test:files-live": "node scripts/test-files-plus-live.mjs",
+    "test:files-panes": "node scripts/test-files-plus-panes-live.mjs"
   }
 }
