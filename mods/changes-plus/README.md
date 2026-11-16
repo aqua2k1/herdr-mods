@@ -24,6 +24,15 @@ zoom and close work as usual, and closing the diff keeps the sidebar.
   native Changes, but no pane is opened until you click.
 - **File rows:** file icon tinted by status (`A`, `M`, `D`, `U`), dim folder
   prefix, `+N` / `−N` counts from `git diff --numstat`, and the status letter.
+- **Commits tab:** the header switches between `Changes` and `Commits`. History
+  uses Better Changes' grouping: local commits ahead of the upstream (or the
+  recorded default branch when the branch was never pushed), the pushed commits
+  on that remote, and on a feature branch a third `origin/HEAD` group. Counts
+  and "N not pulled" come from the last fetch; nothing is fetched, pushed or
+  changed. Select a commit to see its author, date, message and changed files;
+  click a file to reuse the same diff pane with `git show <hash> -- <path>`.
+  Full file works there too (the file as it was at that commit). 50 commits per
+  page with **Load more**.
 - **Unified diff:** added/removed lines keep both real line numbers, with `+`
   in `ansi2`, `−` in `ansi1`, and hunk headings in `accent`. Only the changed
   hunks show by default; **Full file** (button or `f`) shows the whole file
@@ -77,10 +86,11 @@ fresh, hasHead, binary, revision }`; `file` is relative to `root`. Their source
 stays fixed when focus changes. Closing one releases the shared request only if
 it still matches the revision it showed.
 
-Shown copies accept `changes-plus.refresh`, `.full`, `.back` /
-`.close-preview` and `.open:<path>` (the latter reaches the sidebar for tests
-and keys). `f` toggles Full file in a focused diff; `Escape` closes it. Use
-Herdr's native pane header for pane zoom and close.
+Shown copies accept `changes-plus.refresh`, `.full`, `.changes`, `.commits`,
+`.commit:<short-hash>`, `.more`, `.back` / `.close-preview` and `.open:<path>`
+(the latter reaches the sidebar for tests and keys). In the sidebar `Escape`
+goes back from a commit to its history; in a focused diff it closes the pane.
+`f` toggles Full file. Use Herdr's native pane header for pane zoom and close.
 
 ## Tests
 

@@ -5,7 +5,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { theme } from "herdr";
 
 export const TEXT = { badge: 10, caption: 11, body: 13 };
-export const SIZE = { header: 42, row: 28, group: 30, icon: 26 };
+export const SIZE = { header: 42, row: 28, group: 30, icon: 26, tab: 29 };
 const RADIUS = { small: 4, control: 6, row: 7, panel: 10 };
 const ICONS = "mods/changes-plus/icons";
 
@@ -41,7 +41,7 @@ export function IconButton({ id, icon, label, onClick }) {
     .child(Icon(icon, 16));
 }
 
-export function GroupHeading({ id, label, count, color, open, onClick, divided }) {
+export function GroupHeading({ id, label, count, color, detail, open, onClick, divided }) {
   const t = theme();
   return h_flex().id(id).h(SIZE.group).flex_none().px(8).gap(7).items_center()
     .cursor_pointer().hover(s => s.bg(t.hover))
@@ -49,5 +49,19 @@ export function GroupHeading({ id, label, count, color, open, onClick, divided }
     .on_click((_e, cx) => onClick(cx))
     .child(Icon(open ? "chevron-down" : "chevron-right", 12).text_color(t.dim))
     .child(div().text_size(TEXT.caption).font_medium().text_color(color ?? t.muted).child(label))
-    .child(Badge(count));
+    .child(Badge(count))
+    .when(Boolean(detail), el => el.child(div().text_size(TEXT.badge).text_color(t.dim).truncate().child(detail)));
+}
+
+// A pill in the panel header, matching Herdr's tab bar.
+export function HeaderTab({ id, label, count, active, onClick }) {
+  const t = theme();
+  return h_flex().id(id).h(SIZE.tab).flex_none().px(10).gap(7).items_center()
+    .rounded(RADIUS.row).border_1().border_color(active ? t.border : t.background)
+    .bg(active ? t.raised : t.background).text_size(12.8)
+    .text_color(active ? t.foreground : t.muted)
+    .cursor_pointer().hover(s => s.bg(t.hover))
+    .on_click((_e, cx) => onClick(cx))
+    .child(label)
+    .when(count !== undefined && count !== null, el => el.child(Badge(count)));
 }

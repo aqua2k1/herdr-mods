@@ -15,13 +15,23 @@ import {
   LIMITS, statusArgs, headArgs, topLevelArgs, numstatArgs, diffArgs,
   parseNumstat, mergeStats, parseStatus, groupFiles, diffRows, untrackedLines, limitLines,
 } from "./lib/git.js";
-import { SIZE, PanelRoot, PanelHeader, Icon, IconButton, Badge, GroupHeading } from "./views/ui.js";
+import {
+  COMMITS_PER_PAGE, logArgs, branchArgs, upstreamArgs, defaultBranchArgs, mergeBaseArgs,
+  revListArgs, countArgs, originUrlArgs, commitFilesArgs, commitDiffArgs,
+  parseLog, parseCommitFiles, timeAgo, githubRepo, groupCommits,
+} from "./lib/commits.js";
+import { SIZE, PanelRoot, PanelHeader, Icon, IconButton, GroupHeading, HeaderTab } from "./views/ui.js";
+
+const lines = text => text.split("\n").filter(Boolean);
 
 export default class ChangesPlus extends View {
   init(_p, cx) {
     this.preview = props()?.role === "preview";
     this.handle = cx.focus_handle();
-    this.files = []; this.groups = []; this.open = null; this.closed = new Set();
+    this.files = []; this.groups = []; this.open = null;
+    this.closed = new Set(JSON.parse(localStorage.getItem("changes-plus.collapsed") ?? "[]"));
+    this.tab = localStorage.getItem("changes-plus.tab") === "commit" ? "commit" : "changes";
+    this.resetCommits();
     this.rows = []; this.diffWidth = 300; this.error = null; this.note = null;
     this.loading = false; this.diffLoading = false; this.limited = false;
     this.diffToken = 0; this.loadedRevision = null;
@@ -86,6 +96,16 @@ export default class ChangesPlus extends View {
     });
   }
 
+  resetCommits() {
+    this.commits = []; this.remote = null; this.remoteHead = null;
+    this.behind = 0; this.branch = null; this.repo = null; this.hasHead = false;
+    this.commitsDone = false; this.commitsLoading = false; this.commitsError = null;
+    this.selectedCommit = null; this.commitFiles = [];
+    this.commitFilesLoading = false; this.commitFilesError = null;
+    this.commitsToken = (this.commitsToken ?? 0) + 1;
+    this.commitToken = (this.commitToken ?? 0) + 1;
+  }
+
   refresh(cx) {
     const next = this.contextKey();
     if (this.preview) {
@@ -104,6 +124,7 @@ export default class ChangesPlus extends View {
       this.root = loc.root; this.on = loc.on;
       this.files = []; this.groups = []; this.open = null;
       this.error = null; this.note = null; this.limited = false;
+      this.resetCommits();
       // A new context needs a fresh read even if the previous one was still
       // in flight; its result is ignored by the `this.context === context`
       // checks, so leaving `busy` set here would block refreshes forever.
@@ -137,6 +158,7 @@ export default class ChangesPlus extends View {
         const parsed = parseStatus(status.stdout, stats, hasHead);
         if (this.context !== context) return;
         this.root = root; this.files = parsed.files; this.groups = groupFiles(parsed.files);
+        this.hasHead = hasHead;
         this.limited = parsed.limited; this.error = null;
         this.watch(root, cx);
         if (this.open && !parsed.files.some(file => file.path === this.open)) this.open = null;
@@ -149,6 +171,125 @@ export default class ChangesPlus extends View {
         cx.notify();
       }
     });
+  }
+
+  setTab(tab, cx) {
+    if (this.preview || this.tab === tab) return;
+    this.tab = tab;
+    localStorage.setItem("changes-plus.tab", tab);
+    if (tab === "commit") this.loadCommits(cx);
+    cx.notify();
+  }
+
+  // What HEAD has over its upstream, or over the recorded default branch when
+  // the branch was never pushed. Only the last fetch is read; never fetch.
+  async historyMeta(git, stale) {
+    const upstream = await git(upstreamArgs());
+    if (stale()) return;
+    let comparison = null;
+    if (upstream.code === 0 && upstream.stdout.trim()) comparison = { ref: "@{u}", name: upstream.stdout.trim() };
+    else {
+      const defaultBranch = await git(defaultBranchArgs());
+      if (stale()) return;
+      if (defaultBranch.code === 0 && defaultBranch.stdout.trim())
+        comparison = { ref: "refs/remotes/origin/HEAD", name: defaultBranch.stdout.trim() };
+    }
+    let remote = null;
+    if (comparison) {
+      const base = await git(mergeBaseArgs(comparison.ref));
+      if (stale()) return;
+      const head = await git(headArgs());
+      if (base.code === 0 && head.code === 0) {
+        const unpushed = await git(revListArgs(`${base.stdout.trim()}..HEAD`));
+        if (stale()) return;
+        if (unpushed.code === 0)
+          remote = { ref: comparison.ref, name: comparison.name, unpushed: new Set(lines(unpushed.stdout)) };
+      }
+    }
+    let remoteHead = null, behind = 0;
+    if (remote) {
+      const name = remote.name.split("/")[0] || "origin";
+      const ref = `refs/remotes/${name}/HEAD`;
+      const target = await git(["symbolic-ref", "--short", ref]);
+      if (stale()) return;
+      if (target.code === 0 && target.stdout.trim()) {
+        const base = await git(mergeBaseArgs(ref));
+        const count = await git(countArgs(`HEAD..${ref}`));
+        const ahead = await git(revListArgs(`${base.stdout.trim()}..HEAD`));
+        if (stale()) return;
+        if (base.code === 0 && count.code === 0 && ahead.code === 0)
+          remoteHead = { name: `${name}/HEAD`, target: target.stdout.trim(), behind: Number(count.stdout) || 0, ahead: new Set(lines(ahead.stdout)) };
+      }
+      const count = await git(countArgs(`HEAD..${remote.ref}`));
+      if (stale()) return;
+      behind = count.code === 0 ? Number(count.stdout) || 0 : 0;
+    }
+    const branch = await git(branchArgs());
+    const origin = await git(originUrlArgs());
+    if (stale()) return;
+    this.branch = branch.code === 0 ? branch.stdout.trim() : this.branch;
+    this.repo = origin.code === 0 ? githubRepo(origin.stdout) : this.repo;
+    this.remote = remote; this.remoteHead = remoteHead; this.behind = behind;
+  }
+
+  loadCommits(cx, more = false) {
+    if (this.preview || this.commitsLoading || !this.root) return;
+    if (!this.hasHead) { this.commitsDone = true; cx.notify(); return; }
+    const context = this.context, token = ++this.commitsToken;
+    const stale = () => token !== this.commitsToken || this.context !== context;
+    const count = more ? COMMITS_PER_PAGE : Math.max(COMMITS_PER_PAGE, this.commits.length);
+    const skip = more ? this.commits.length : 0;
+    const git = args => exec("git", args, { cwd: this.root, on: this.on });
+    this.commitsLoading = true; cx.notify();
+    cx.spawn(async cx => {
+      try {
+        const result = await git(logArgs(count, skip));
+        if (stale()) return;
+        if (result.code !== 0) throw new Error(result.stderr || "Cannot read history");
+        const page = parseLog(result.stdout);
+        if (stale()) return;
+        if (!more) await this.historyMeta(git, stale);
+        if (stale()) return;
+        this.commits = more ? [...this.commits, ...page] : page;
+        this.commitsDone = page.length < count;
+        this.commitsError = null;
+      } catch (e) {
+        if (token === this.commitsToken) this.commitsError = String(e);
+      } finally {
+        if (token === this.commitsToken) { this.commitsLoading = false; cx.notify(); }
+      }
+    });
+  }
+
+  openCommit(commit, cx) {
+    if (this.preview) return;
+    const context = this.context, token = ++this.commitToken;
+    this.selectedCommit = commit; this.commitFiles = [];
+    this.commitFilesError = null; this.commitFilesLoading = true;
+    cx.notify();
+    cx.spawn(async cx => {
+      try {
+        const git = args => exec("git", args, { cwd: this.root, on: this.on });
+        const [numstat, names] = await Promise.all([
+          git(commitFilesArgs(commit.hash, "--numstat")),
+          git(commitFilesArgs(commit.hash, "--name-status")),
+        ]);
+        if (numstat.code !== 0 || names.code !== 0)
+          throw new Error(numstat.stderr || names.stderr || "Cannot read commit");
+        if (token !== this.commitToken || this.context !== context) return;
+        this.commitFiles = parseCommitFiles(numstat.stdout, names.stdout);
+      } catch (e) {
+        if (token === this.commitToken) this.commitFilesError = String(e);
+      } finally {
+        if (token === this.commitToken) { this.commitFilesLoading = false; cx.notify(); }
+      }
+    });
+  }
+
+  toggleGroup(key, cx) {
+    if (this.closed.has(key)) { this.closed.delete(key); localStorage.setItem("changes-plus.collapsed", JSON.stringify([...this.closed])); }
+    else { this.closed.add(key); localStorage.setItem("changes-plus.collapsed", JSON.stringify([...this.closed])); }
+    cx.notify();
   }
 
   follow(cx) {
@@ -193,8 +334,10 @@ export default class ChangesPlus extends View {
           else if (text.includes("\0")) lines = ["Binary file · no text diff"];
           else lines = untrackedLines(text);
         } else {
-          const result = await exec("git", diffArgs({ hasHead, path: file, full: this.fullFile }),
-            { cwd: root, on: on ?? null });
+          const args = request.commit?.hash
+            ? commitDiffArgs({ hash: request.commit.hash, path: file, full: this.fullFile })
+            : diffArgs({ hasHead, path: file, full: this.fullFile });
+          const result = await exec("git", args, { cwd: root, on: on ?? null });
           if (token !== this.diffToken) return;
           if (result.code !== 0) throw new Error(result.stderr || "git diff failed");
           const all = result.stdout.replace(/\n$/, "").split("\n");
@@ -213,17 +356,27 @@ export default class ChangesPlus extends View {
   }
 
   // Same right-split/reuse rule as Files Plus, on a separate channel.
-  pick(path, cx) {
+  pick(path, cx, scope = "changes") {
     const target = previewTarget(panes(), focused());
     if (!target?.work && !target?.preview) {
       this.error = "Select a work tab before opening a diff"; cx.notify(); return;
     }
-    const file = this.files.find(f => f.path === path);
+    const file = scope === "commit"
+      ? this.commitFiles.find(f => f.path === path)
+      : this.files.find(f => f.path === path);
     const request = {
       root: this.root, on: this.on ?? null, file: path, revision: randomUUID(),
-      fresh: file?.fresh ?? false, hasHead: file?.hasHead ?? true, binary: file?.binary ?? false,
-      full: this.fullFile,
+      fresh: scope === "commit" ? false : (file?.fresh ?? false),
+      hasHead: scope === "commit" ? true : (file?.hasHead ?? true),
+      binary: file?.binary ?? false, full: this.fullFile,
     };
+    if (scope === "commit" && this.selectedCommit) {
+      request.scope = "commit";
+      request.commit = {
+        hash: this.selectedCommit.hash, short: this.selectedCommit.short,
+        subject: this.selectedCommit.subject,
+      };
+    }
     // The diff takes its whole-file choice from the shared request so the two
     // copies can never disagree after a restart or rapid click.
     setShared("changes-plus.full-file", this.fullFile);
@@ -252,11 +405,6 @@ export default class ChangesPlus extends View {
     cx.notify();
   }
 
-  toggleGroup(key, cx) {
-    if (this.closed.has(key)) this.closed.delete(key); else this.closed.add(key);
-    cx.notify();
-  }
-
   toggleFull(cx) {
     const full = !this.fullFile;
     this.fullFile = full; this.shownFull = full;
@@ -274,24 +422,37 @@ export default class ChangesPlus extends View {
     if (command === "refresh") {
       this.refresh(cx);
       if (this.preview) this.loadDiff(cx);
+      else if (this.tab === "commit" && !this.selectedCommit) this.loadCommits(cx);
     } else if (command === "full") this.toggleFull(cx);
+    else if (command === "changes") this.setTab("changes", cx);
+    else if (command === "commit" || command === "commits") this.setTab("commit", cx);
+    else if (command === "more") this.loadCommits(cx, true);
     else if (command === "back" || command === "close-preview") {
       if (this.preview) this.closePreview(cx);
+      else if (this.tab === "commit" && this.selectedCommit) {
+        this.selectedCommit = null; this.commitFiles = []; this.commitFilesError = null;
+      }
     } else if (command.startsWith("open:")) {
       const path = command.slice(5);
-      if (this.files.some(file => file.path === path)) this.pick(path, cx);
+      if (this.tab === "commit" && this.selectedCommit && this.commitFiles.some(f => f.path === path))
+        this.pick(path, cx, "commit");
+      else if (this.files.some(file => file.path === path)) this.pick(path, cx);
+    } else if (command.startsWith("commit:")) {
+      const short = command.slice(7);
+      const commit = this.commits.find(c => c.short === short || c.hash.startsWith(short));
+      if (commit) this.openCommit(commit, cx);
     }
     cx.notify();
   }
 
-  fileRow(file, t) {
+  fileRow(file, t, scope = "changes") {
     const parts = file.path.split("/"), name = parts.pop(), dir = parts.length ? parts.join("/") + "/" : "";
     const color = file.status === "A" ? t.ansi2 : file.status === "D" ? t.ansi1
       : file.status === "U" ? t.ansi1 : t.blocked;
     return h_flex().id(`changes-plus-file-${file.path}`).h(SIZE.row).flex_none().px(8).gap(8)
       .items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
       .when(this.open === file.path, el => el.bg(t.selected))
-      .on_click((_e, cx) => this.pick(file.path, cx))
+      .on_click((_e, cx) => this.pick(file.path, cx, scope))
       .child(Icon("file", 14).text_color(color))
       .child(h_flex().flex_1().min_w(0)
         .child(div().text_color(t.dim).truncate().child(dir))
@@ -320,6 +481,66 @@ export default class ChangesPlus extends View {
       .child(div().flex_1().min_w(0).truncate().child(row.text));
   }
 
+  commitRow(commit, t) {
+    return h_flex().id(`changes-plus-commit-${commit.hash}`).flex_none().px(8).py(6).gap(8)
+      .items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
+      .on_click((_e, cx) => this.openCommit(commit, cx))
+      .child(v_flex().flex_1().min_w(0).gap(1)
+        .child(div().truncate().child(commit.subject))
+        .child(div().truncate().text_size(11).text_color(t.dim).child(`${commit.author} · ${timeAgo(commit.at)}`)))
+      .child(div().flex_none().text_size(11).text_color(t.dim)
+        .font_family(terminalFonts(settings()).font_family).child(commit.short));
+  }
+
+  renderHistory(t) {
+    const list = v_flex().id("changes-plus-commit-list").flex_1().min_h(0).overflow_y_scrollbar().p(6);
+    if (this.commitsError) return list.child(div().p(8).text_color(t.ansi1).child(this.commitsError));
+    if (!this.commits.length) return list.child(div().p(8).text_color(t.dim)
+      .child(this.commitsLoading ? "Loading history…" : this.root ? "No commits yet" : "No folder"));
+    const groups = groupCommits({
+      commits: this.commits, remote: this.remote, remoteHead: this.remoteHead,
+      behind: this.behind, branch: this.branch, done: this.commitsDone,
+    });
+    let drawn = 0;
+    for (const group of groups) {
+      const open = !this.closed.has(group.scope);
+      list.child(GroupHeading({
+        id: `changes-plus-group-${group.scope}`, label: group.label, count: group.count,
+        detail: group.detail, color: group.scope === "branch" ? t.accent : t.muted,
+        open, divided: drawn++ > 0, onClick: c => this.toggleGroup(group.scope, c),
+      }));
+      if (!open) continue;
+      for (const commit of group.commits) list.child(this.commitRow(commit, t));
+      if (group.withMore && !this.commitsDone) list.child(div().id("changes-plus-commits-more")
+        .py(8).text_size(11).text_color(t.muted).cursor_pointer().hover(s => s.bg(t.hover))
+        .on_click((_e, cx) => this.loadCommits(cx, true))
+        .child(this.commitsLoading ? "Loading…" : "Load more"));
+    }
+    return list;
+  }
+
+  renderCommit(t) {
+    const commit = this.selectedCommit;
+    return v_flex().id("changes-plus-commit-detail").flex_1().min_h(0)
+      .child(h_flex().h(42).flex_none().px(8).gap(8).items_center().border_b(1).border_color(t.border)
+        .child(div().id("changes-plus-commit-back").h(26).px(8).flex_none().flex().items_center()
+          .rounded(6).text_color(t.muted).cursor_pointer().hover(s => s.bg(t.hover))
+          .on_click((_e, cx) => this.command("back", cx)).child("‹ Back"))
+        .child(div().flex_1().min_w(0).truncate().font_semibold().child(commit.subject))
+        .child(div().flex_none().text_size(11).text_color(t.dim)
+          .font_family(terminalFonts(settings()).font_family).child(commit.short)))
+      .child(v_flex().id("changes-plus-commit-about").flex_none().px(10).py(8).gap(3)
+        .child(div().text_size(11).text_color(t.dim).child(`${commit.author} · ${new Date(commit.at * 1000).toLocaleString()}`))
+        .when(Boolean(commit.body), el => el.child(div().text_size(11).text_color(t.muted).child(commit.body))))
+      .child(v_flex().id("changes-plus-commit-files").flex_1().min_h(0).overflow_y_scrollbar().p(6)
+        .border_t(1).border_color(t.border)
+        .when(this.commitFilesLoading, el => el.child(div().p(8).text_color(t.dim).child("Loading files…")))
+        .when(Boolean(this.commitFilesError), el => el.child(div().p(8).text_color(t.ansi1).child(this.commitFilesError)))
+        .children(this.commitFiles.map(file => this.fileRow(file, t, "commit")))
+        .when(!this.commitFiles.length && !this.commitFilesLoading, el => el.child(div().p(8)
+          .text_color(t.dim).child("No file changes in this commit"))));
+  }
+
   render(cx) {
     if (this.contextKey() !== this.context?.key) this.refresh(cx);
     const t = theme();
@@ -332,16 +553,21 @@ export default class ChangesPlus extends View {
     if (!this.preview) {
       const add = this.files.reduce((sum, file) => sum + (file.add || 0), 0);
       const del = this.files.reduce((sum, file) => sum + (file.del || 0), 0);
-      return root
-        .child(PanelHeader()
-          .child(div().font_semibold().child("Changes"))
-          .child(Badge(this.files.length))
-          .child(div().flex_1())
+      const header = PanelHeader()
+        .child(HeaderTab({ id: "changes-plus-tab-changes", label: "Changes", count: this.files.length,
+          active: this.tab === "changes", onClick: c => this.setTab("changes", c) }))
+        .child(HeaderTab({ id: "changes-plus-tab-commits", label: "Commits",
+          count: this.remote ? this.remote.unpushed.size : undefined,
+          active: this.tab === "commit", onClick: c => this.setTab("commit", c) }))
+        .child(div().flex_1())
+        .when(this.tab === "changes", el => el
           .child(div().text_size(11).text_color(t.ansi2).child(`+${add}`))
-          .child(div().text_size(11).text_color(t.ansi1).child(`−${del}`))
-          .child(IconButton({ id: "changes-plus-refresh", icon: "refresh", label: "Refresh",
-            onClick: c => this.command("refresh", c) })))
-        .child(v_flex().id("changes-plus-list").flex_1().min_h(0).overflow_y_scrollbar().p(6)
+          .child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)))
+        .child(IconButton({ id: "changes-plus-refresh", icon: "refresh", label: "Refresh",
+          onClick: c => this.command("refresh", c) }));
+      const body = this.tab === "commit"
+        ? (this.selectedCommit ? this.renderCommit(t) : this.renderHistory(t))
+        : v_flex().id("changes-plus-list").flex_1().min_h(0).overflow_y_scrollbar().p(6)
           .children(this.groups.flatMap((group, index) => {
             const open = !this.closed.has(group.key);
             const heading = GroupHeading({
@@ -354,7 +580,8 @@ export default class ChangesPlus extends View {
           .when(!this.files.length, el => el.child(div().p(8).text_color(t.dim)
             .child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder"))))
           .when(this.limited, el => el.child(div().px(8).pb(8).text_size(11).text_color(t.dim)
-            .child(`Showing the first ${LIMITS.files} changed files`))))
+            .child(`Showing the first ${LIMITS.files} changed files`)));
+      return root.child(header).child(body)
         .when(Boolean(this.note), el => el.child(div().px(10).pb(8).text_size(11).text_color(t.ansi1).child(this.note)));
     }
 

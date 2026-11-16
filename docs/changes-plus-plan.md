@@ -31,6 +31,15 @@
   也不因聚焦 preview 而二次 split。
 - `lib/`、`views/` 是本地副本：mod 不能跨目录 import。SVG 图标同样随 mod 走。
 
+## Commits tab（后续补充）
+
+- Header 用 Changes / Commits 两个 pill 切换；Commits 沿用 Better Changes 的分组规则：
+  本地未推送（上游，或从未推送时用 `origin/HEAD`）、已推送的远端分支组，特性分支再加
+  `origin/HEAD` 组。只读 `merge-base` / `rev-list`，从不 fetch、push 或改仓库。
+- 提交行显示 subject、作者、相对时间、短 hash；点进去是提交详情（作者/日期/正文/变更文件）。
+- 提交里的文件复用同一个中间 diff pane，用 `git show <hash> -- <path>` 取变化；
+  Full file 用 `--unified=2000` 显示该提交时的整个文件。50 条一页，可 Load more。
+
 ## 验收
 
 - `npm test`、`herdr-app check mods/changes-plus`。

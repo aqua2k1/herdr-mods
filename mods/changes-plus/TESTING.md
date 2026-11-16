@@ -5,9 +5,9 @@ claim Windows/macOS GUI compatibility.
 
 ## Run on Linux (WSLg, 2026-11-16)
 
-- `npm test` — 212 tests, 211 pass, 1 pre-existing skip (files-plus PDF helper
-  timeout). New tests cover Git parsing/grouping, diff row numbering, pane
-  targeting and terminal-font metrics.
+- `npm test` — 219 tests, 218 pass, 1 pre-existing skip (files-plus PDF helper
+  timeout). Tests cover Git parsing/grouping, diff row numbering, pane
+  targeting, terminal-font metrics and commit log/file/group parsing.
 - `herdr-app check mods/changes-plus` — passed (Herdr 0.1.16).
 - `npm run test:changes-panes` — passed in a real, isolated Herdr window:
   - Cloned the freshly shipped `main` layout into a throw-away app home; the
@@ -15,8 +15,9 @@ claim Windows/macOS GUI compatibility.
   - Installed the unmodified production mod plus a driver subclass in a
     **separate mod folder**. No production file was edited for the test.
   - Built a real Git repository with a modified tracked file, an untracked
-    file and a conflicted merge, then verified the three Better Changes-style
-    groups (Conflicts / Changed / Untracked) with their status and counts.
+    file, a conflicted merge and a local bare remote with the base pushed,
+    then verified the three Better Changes-style groups (Conflicts / Changed /
+    Untracked) with their status and counts.
   - `changes-plus.open:modified` produced a real `pane.split` to the right of
     the work pane inside the dedicated tab. Unified rows carried hunk headers
     and old/new line numbers; terminal font size 20 was read from settings.
@@ -27,10 +28,14 @@ claim Windows/macOS GUI compatibility.
     the changed line still marked in `ansi1`/`ansi2`. Native `pane.zoom`
     toggled, and `pane.close` removed only the diff pane while the sidebar
     kept its groups.
+  - The Commits tab read the real history and split it into the local unpushed
+    and `origin/main` groups; opening the `ours` commit listed its changed file
+    and a click reused the unified diff pane with `git show <hash> -- <path>`.
   - Screenshots and the full CLI/status snapshot are in
     `~/.cache/changes-plus-live-*/` (`01-sidebar-groups.png`,
     `02-unified-diff.png`, `02b-full-file-toggle.png`, `03-reused-untracked.png`, `04-full-file-toggle.png`,
-    `05-native-zoom.png`, `06-close-keeps-sidebar.png`, `results.json`).
+    `05-native-zoom.png`, `06-close-keeps-sidebar.png`, `07-commits-tabs.png`,
+    `08-commit-files.png`, `09-commit-unified-diff.png`, `results.json`).
   - The test closed its own tab and window afterwards and left the personal
     layout and installed mods untouched.
 
@@ -48,6 +53,9 @@ claim Windows/macOS GUI compatibility.
   - Full file replaced the short hunks with the whole file, same-tab reuse kept
     one pane while updating the shared request, and native pane close left the
     sidebar intact.
+  - With a local bare remote, the Commits tab showed real `main` / `origin/main`
+    groups, a commit's author, date and changed files, and its file diff in the
+    reused unified pane.
   - The test found a real bug: switching context while a Git read was in flight
     left `busy` set and blocked later refreshes. Fixed in `main.js` and the
     Windows test then passed end to end.

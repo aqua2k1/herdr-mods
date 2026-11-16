@@ -34,6 +34,7 @@ async function git(cwd, ...args) {
   const { stdout } = await exec('git', args, { cwd });
   return stdout.trim();
 }
+const gitAt = async (cwd, ...args) => (await exec('git', args, { cwd })).stdout.trim();
 async function readState(file, serial) {
   for (let n = 0; n < 40; n++) {
     try { const state = JSON.parse(await readFile(path.join(home, file), 'utf8')); if (state.serial > (serial || 0)) return state; } catch {}
@@ -57,6 +58,22 @@ async function snapshot(name) {
   assert.deepEqual(status.overlays || [], [], 'An overlay obstructs the visual test');
   return { state: { ...side, previewState: preview }, ls, status, panes: side.panes.filter(p => p.tab === tab) };
 }
+async function waitCommits() {
+  for (let n = 0; n < 60; n++) {
+    const s = await snapshot('latest');
+    if (!s.state.commitsLoading && s.state.commits.length > 0 && s.state.historyGroups.length) return s;
+    await pause(300);
+  }
+  throw new Error('Timed out waiting for commit history');
+}
+async function waitCommitFiles() {
+  for (let n = 0; n < 60; n++) {
+    const s = await snapshot('latest');
+    if (!s.state.commitFilesLoading && s.state.commitFiles.length > 0) return s;
+    await pause(300);
+  }
+  throw new Error('Timed out waiting for commit files');
+}
 async function waitPanes(count) {
   for (let n = 0; n < 50; n++) {
     const s = await snapshot('latest'); if (s.panes.length === count) return s;
@@ -75,6 +92,14 @@ try {
   await git(fixtures, 'config', 'user.name', 'Test');
   await git(fixtures, 'add', '-A');
   await git(fixtures, 'commit', '-qm', 'base');
+  // A local bare remote with the base pushed gives the Commits tab a real
+  // unpushed group to read (no network, no fetch).
+  const remote = path.join(root, 'remote.git');
+  await gitAt(root, 'init', '--bare', '-q', remote);
+  await git(fixtures, 'remote', 'add', 'origin', remote);
+  const baseBranch = await git(fixtures, 'branch', '--show-current');
+  await git(fixtures, 'push', '-q', '-u', 'origin', baseBranch);
+  await git(fixtures, 'symbolic-ref', 'refs/remotes/origin/HEAD', `refs/remotes/origin/${baseBranch}`);
   await git(fixtures, 'checkout', '-qb', 'other');
   await writeFile(path.join(fixtures, 'nested', 'code.ts'), 'export const n = 2; // incoming\n');
   await git(fixtures, 'commit', '-qam', 'other');
@@ -109,6 +134,7 @@ try {
     filter: p => !p.endsWith('.d.ts') && !p.endsWith('jsconfig.json') && !path.relative(path.join(repo, 'mods/changes-plus'), p).split(path.sep).includes('test') });
   // The only test injection is a separate subclass. The copied production mod stays byte-for-byte unchanged.
   await writeFile(path.join(install, 'main.js'), `import ChangesPlus from './production/main.js';
+import { groupCommits } from './production/lib/commits.js';
 import { panes, focused, shared, settings, props, appHome } from 'herdr';
 import * as fs from 'fs/promises';
 export default class Driver extends ChangesPlus {
@@ -116,10 +142,16 @@ export default class Driver extends ChangesPlus {
   const files = { 'open:modified': 'sample.txt', 'open:untracked': 'untracked.md', 'open:conflict': 'nested/code.ts' };
   if (files[command] && !this.preview) return this.pick(files[command], cx);
   if (command === 'full' && !this.preview) return this.toggleFull(cx);
+  if (command === 'commits' && !this.preview) return this.setTab('commit', cx);
+  if (command === 'changes' && !this.preview) return this.setTab('changes', cx);
   if (command === 'snapshot' && !this.preview) {
    const t = focused()?.tab;
    const value = { serial: this.serial = (this.serial || 0) + 1, panes: panes(), focused: focused(), settings: settings(), props: props(),
     preview: this.preview, files: this.files, groups: this.groups, open: this.open, full: this.fullFile,
+    tab: this.tab, commits: this.commits, commitsLoading: this.commitsLoading, commitsError: this.commitsError,
+    remote: this.remote, branch: this.branch, historyGroups: this.tab === 'commit' && !this.selectedCommit
+      ? groupCommits({ commits: this.commits, remote: this.remote, remoteHead: this.remoteHead, behind: this.behind, branch: this.branch, done: this.commitsDone }) : [],
+    selectedCommit: this.selectedCommit, commitFiles: this.commitFiles, commitFilesLoading: this.commitFilesLoading,
     request: t ? shared('changes-plus.diff.' + t) : null };
    cx.spawn(async () => { await fs.writeFile(appHome() + '/driver-state.json', JSON.stringify(value)); });
    return;
@@ -198,6 +230,26 @@ export default class Driver extends ChangesPlus {
   assert.equal(s.state.full, true);
   assert.ok(s.state.previewState.rows.length >= 3);
   await shot('04-full-file-toggle'); report.checks.push('Full file shares state and reloads the unified diff');
+
+  // Commits tab: real local bare remote, unpushed grouping, commit files and diff.
+  await doApp('changes-plus.full'); await pause(500); // back to changed hunks only
+  await doApp('changes-plus.commits'); s = await waitCommits(); s = await snapshot('07-commits-groups');
+  assert.equal(s.state.tab, 'commit');
+  assert.ok(s.state.commits.length >= 2);
+  assert.deepEqual(s.state.historyGroups.map(g => g.scope), ['branch', 'remote']);
+  assert.ok(s.state.historyGroups[0].count >= 1);
+  await shot('07-commits-tabs'); report.checks.push('Commits tab reads real history with unpushed/remote groups');
+  const commit = s.state.commits.find(c => c.subject === 'ours') ?? s.state.commits[0];
+  await doApp(`changes-plus.commit:${commit.short}`); s = await waitCommitFiles(); s = await snapshot('08-commit-detail');
+  assert.ok(s.state.selectedCommit);
+  assert.ok(s.state.commitFiles.some(f => f.path === 'nested/code.ts'));
+  await shot('08-commit-files'); report.checks.push('opening a commit lists the files it changed');
+  await doApp('changes-plus.open:nested/code.ts'); await pause(800); s = await snapshot('09-commit-diff');
+  assert.equal(s.state.request.scope, 'commit');
+  assert.equal(s.state.request.commit.hash, s.state.selectedCommit.hash);
+  assert.ok(s.state.previewState.rows.some(r => r.kind === '@'));
+  await shot('09-commit-unified-diff'); report.checks.push('commit file reuses the unified diff pane via git show');
+  await doApp('changes-plus.changes'); await pause(400);
   await doApp('pane.zoom', { pane: preview.pane }); await pause(400); s = await snapshot('05-zoom');
   assert.equal(s.panes.find(p => p.pane === preview.pane).zoomed, true);
   await shot('05-native-zoom');

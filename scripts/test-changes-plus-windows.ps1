@@ -31,6 +31,13 @@ function Invoke-Git([string[]]$GitArgs, [switch]$AllowFailure) {
     if ($code -ne 0 -and -not $AllowFailure) { throw "git $($GitArgs -join ' ') failed: $out" }
     return $out
 }
+function Invoke-GitAt([string]$cwd, [string[]]$GitArgs) {
+    $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try { $out = & git -C $cwd @GitArgs 2>&1 | Out-String; $code = $LASTEXITCODE }
+    finally { $ErrorActionPreference = $old }
+    if ($code -ne 0) { throw "git $($GitArgs -join ' ') failed: $out" }
+    return $out
+}
 function Write-Text([string]$path, [string]$text) { [IO.File]::WriteAllText($path, $text, $utf8) }
 function Wait-State([string]$file, [int]$after) {
     $path = Join-Path $homeDir $file
@@ -67,6 +74,22 @@ function Wait-Loaded {
     }
     throw 'Timed out waiting for Git status to load'
 }
+function Wait-Commits {
+    for ($i = 0; $i -lt 120; $i++) {
+        $s = Get-Snapshot 'latest'
+        if (-not $s.state.commitsLoading -and @($s.state.commits).Count -gt 0 -and @($s.state.historyGroups).Count -gt 0) { return $s }
+        Start-Sleep -Milliseconds 300
+    }
+    throw 'Timed out waiting for commit history'
+}
+function Wait-CommitFiles {
+    for ($i = 0; $i -lt 120; $i++) {
+        $s = Get-Snapshot 'latest'
+        if (-not $s.state.commitFilesLoading -and @($s.state.commitFiles).Count -gt 0) { return $s }
+        Start-Sleep -Milliseconds 300
+    }
+    throw 'Timed out waiting for commit files'
+}
 function Wait-Panes([int]$count) {
     for ($i = 0; $i -lt 50; $i++) {
         $s = Get-Snapshot 'latest'
@@ -86,6 +109,14 @@ try {
     Invoke-Git @('config', 'core.autocrlf', 'false')
     Invoke-Git @('add', '-A')
     Invoke-Git @('commit', '-qm', 'base')
+    # A local bare remote with the base pushed gives the Commits tab a real
+    # unpushed group to read (no network, no fetch).
+    $remote = Join-Path $root 'remote.git'
+    Invoke-GitAt $root @('init', '--bare', '-q', $remote)
+    Invoke-Git @('remote', 'add', 'origin', $remote)
+    $baseBranch = (Invoke-Git @('branch', '--show-current')).Trim()
+    Invoke-Git @('push', '-q', '-u', 'origin', $baseBranch)
+    Invoke-Git @('symbolic-ref', 'refs/remotes/origin/HEAD', "refs/remotes/origin/$baseBranch")
     Invoke-Git @('checkout', '-qb', 'other')
     Write-Text (Join-Path $fixtures 'nested\code.ts') "export const n = 2; // incoming`n"
     Invoke-Git @('commit', '-qam', 'other')
@@ -105,6 +136,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $Repo 'mods\changes-plus') -Destination (Join-Path $install 'production') -Recurse
     $driver = @'
 import ChangesPlus from './production/main.js';
+import { groupCommits } from './production/lib/commits.js';
 import { panes, focused, shared, settings, props, appHome } from 'herdr';
 import * as fs from 'fs/promises';
 export default class Driver extends ChangesPlus {
@@ -112,11 +144,17 @@ export default class Driver extends ChangesPlus {
   const files = { 'open:modified': 'sample.txt', 'open:untracked': 'untracked.md', 'open:conflict': 'nested/code.ts' };
   if (files[command] && !this.preview) return this.pick(files[command], cx);
   if (command === 'full' && !this.preview) return this.toggleFull(cx);
+  if (command === 'commits' && !this.preview) return this.setTab('commit', cx);
+  if (command === 'changes' && !this.preview) return this.setTab('changes', cx);
   if (command === 'snapshot' && !this.preview) {
    const t = focused()?.tab;
    const value = { serial: this.serial = (this.serial || 0) + 1, panes: panes(), focused: focused(), settings: settings(), props: props(),
     preview: this.preview, files: this.files, groups: this.groups, open: this.open, full: this.fullFile,
     context: this.context, root: this.root, loading: this.loading, busy: this.busy,
+    tab: this.tab, commits: this.commits, commitsLoading: this.commitsLoading, commitsError: this.commitsError,
+    remote: this.remote, branch: this.branch, historyGroups: this.tab === 'commit' && !this.selectedCommit
+      ? groupCommits({ commits: this.commits, remote: this.remote, remoteHead: this.remoteHead, behind: this.behind, branch: this.branch, done: this.commitsDone }) : [],
+    selectedCommit: this.selectedCommit, commitFiles: this.commitFiles, commitFilesLoading: this.commitFilesLoading,
     request: t ? shared('changes-plus.diff.' + t) : null };
    cx.spawn(async () => { await fs.writeFile(appHome() + '/driver-state.json', JSON.stringify(value)); });
    return;
@@ -219,6 +257,39 @@ export default class Driver extends ChangesPlus {
     $shot = Join-Path $root '03-reused-untracked.png'
     Invoke-Herdr @('shot', $shot) | Out-Null
     $checks += 'same-tab diff pane reused; shared request and revision updated'
+
+    # Commits tab: real local bare remote, unpushed grouping, commit files and diff.
+    Invoke-Herdr @('do', 'changes-plus.full') | Out-Null
+    Invoke-Herdr @('do', 'changes-plus.commits') | Out-Null
+    $s = Wait-Commits
+    $s = Get-Snapshot '07-commits-groups'
+    if ($s.state.tab -ne 'commit') { throw 'Commits tab not selected' }
+    if (@($s.state.commits).Count -lt 2) { throw 'Commit history is empty' }
+    $scopes = @($s.state.historyGroups | ForEach-Object { $_.scope })
+    if (($scopes -join ',') -ne 'branch,remote') { throw "Unexpected commit groups: $($scopes -join ',')" }
+    $shot = Join-Path $root '07-commits-tabs.png'
+    Invoke-Herdr @('shot', $shot) | Out-Null
+    $checks += 'Commits tab reads real history with unpushed/remote groups'
+    $commit = @($s.state.commits | Where-Object { $_.subject -eq 'ours' })[0]
+    if (-not $commit) { $commit = $s.state.commits[0] }
+    Invoke-Herdr @('do', ('changes-plus.commit:' + $commit.short)) | Out-Null
+    $s = Wait-CommitFiles
+    $s = Get-Snapshot '08-commit-detail'
+    if (-not $s.state.selectedCommit) { throw 'Commit was not opened' }
+    if (-not @($s.state.commitFiles | Where-Object { $_.path -eq 'nested/code.ts' }).Count) { throw 'Commit files missing' }
+    $shot = Join-Path $root '08-commit-files.png'
+    Invoke-Herdr @('shot', $shot) | Out-Null
+    $checks += 'opening a commit lists the files it changed'
+    Invoke-Herdr @('do', 'changes-plus.open:nested/code.ts') | Out-Null
+    Start-Sleep -Milliseconds 800
+    $s = Get-Snapshot '09-commit-diff'
+    if ($s.state.request.scope -ne 'commit') { throw 'Commit diff request scope missing' }
+    if ($s.state.request.commit.hash -ne $s.state.selectedCommit.hash) { throw 'Wrong commit hash in diff request' }
+    if (-not @($s.previewState.rows | Where-Object { $_.kind -eq '@' }).Count) { throw 'No unified hunk in commit diff' }
+    $shot = Join-Path $root '09-commit-unified-diff.png'
+    Invoke-Herdr @('shot', $shot) | Out-Null
+    $checks += 'commit file reuses the unified diff pane via git show'
+    Invoke-Herdr @('do', 'changes-plus.changes') | Out-Null
 
     Invoke-Herdr @('do', 'pane.close', '--pane', $previewPane.pane) | Out-Null
     $s = Wait-Panes 1
