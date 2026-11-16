@@ -10,6 +10,7 @@ import { MAX_IMAGE_BYTES, IMAGE_CHUNK_BYTES, decodeBase64, parseImageDimensions,
 const run = promisify(execFile);
 const sh = await readFile(new URL('../helpers/read-image.sh', import.meta.url), 'utf8');
 const ps = await readFile(new URL('../helpers/read-image.ps1', import.meta.url), 'utf8');
+const shLF = sh.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
 const imageWithScript = (path, on, options = {}) => readImage(path, on, { script: options.platform === 'win32' ? ps : sh, ...options });
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
 const version = 'a'.repeat(64);
@@ -125,7 +126,7 @@ test('live hc remote: exact 5 MiB valid PNG, bounded replies, checksum, cleanup'
         return hc(c,a);
       };
       // Emulate a Windows-installed helper, including BOM and CRLF, over real remote exec.
-      const windowsCheckoutSh = '\uFEFF' + sh.replace(/\n/g, '\r\n');
+      const windowsCheckoutSh = '\uFEFF' + shLF.replace(/\n/g, '\r\n');
       const result=await readImage(file,machine,{exec,platform:'win32',scripts:{posix:windowsCheckoutSh,windows:ps}});
       assert.equal(result.width,1); assert.equal(result.height,1);
       assert.deepEqual(Buffer.from(result.bytes),bytes);
@@ -174,19 +175,22 @@ test('routing, injected helpers, literal hostile paths and remote OS independenc
   for (const platform of ['linux','darwin','win32']) {
     for (const on of [null, 'remote']) {
       const calls = [];
-      await readImage(path, on, { platform, scripts:{posix:sh,windows:ps}, exec:async (...a) => {
-        calls.push(a); return mockExec(png)(...a);
-      } });
-      const call = calls[0];
-      assert.deepEqual(call[2], {on, timeout:30000});
-      if (!on && platform === 'win32') {
-        assert.equal(call[0], 'powershell');
-        assert.equal(call[1][3], '& {\n' + ps + '\n} ' + "'" + path.replace(/['‘’‚‛]/g, '$&$&') + "' '0' '1048576' ''");
-      } else {
-        assert.equal(call[0], 'sh'); assert.equal(call[1][3],path);
-        assert.equal(call[1][1], sh);
+      for (const source of [sh, shLF, shLF.replace(/\n/g, '\r\n'), '\uFEFF' + shLF.replace(/\n/g, '\r\n')]) {
+        calls.length = 0;
+        await readImage(path, on, { platform, scripts:{posix:source,windows:ps}, exec:async (...a) => {
+          calls.push(a); return mockExec(png)(...a);
+        } });
+        const call = calls[0];
+        assert.deepEqual(call[2], {on, timeout:30000});
+        if (!on && platform === 'win32') {
+          assert.equal(call[0], 'powershell');
+          assert.equal(call[1][3], '& {\n' + ps + '\n} ' + "'" + path.replace(/['‘’‚‛]/g, '$&$&') + "' '0' '1048576' ''");
+        } else {
+          assert.equal(call[0], 'sh'); assert.equal(call[1][3],path);
+          assert.equal(call[1][1], shLF);
+        }
+        assert.equal(calls.length,2);
       }
-      assert.equal(calls.length,2);
     }
   }
   await assert.rejects(imageWithScript('x\0y', null, {exec:nativeExec, platform:'linux'}), /path/);
@@ -197,7 +201,7 @@ test('POSIX helper source normalizes Windows line endings and BOM without changi
   try {
     const file = join(dir, "中文 ' image\r\n.png");
     await writeFile(file, png);
-    for (const source of [sh.replace(/\n/g, '\r\n'), '\uFEFF' + sh.replace(/\n/g, '\r\n')]) {
+    for (const source of [shLF.replace(/\n/g, '\r\n'), '\uFEFF' + shLF.replace(/\n/g, '\r\n')]) {
       for (const on of [null, 'remote']) {
         let calls = 0;
         const result = await readImage(file, on, {
@@ -205,7 +209,7 @@ test('POSIX helper source normalizes Windows line endings and BOM without changi
           exec: async (command, args, options) => {
             calls++;
             assert.equal(command, 'sh');
-            assert.equal(args[1], sh);
+            assert.equal(args[1], shLF);
             assert.equal(args[3], file);
             assert.equal(options.on, on);
             return nativeExec(command, args);
