@@ -34,9 +34,30 @@ claim Windows/macOS GUI compatibility.
   - The test closed its own tab and window afterwards and left the personal
     layout and installed mods untouched.
 
+## Run on native Windows (2026-11-17)
+
+- `herdr-app.exe check mods/changes-plus` — passed on Herdr 0.1.16.
+- `powershell.exe -ExecutionPolicy Bypass -File scripts/test-changes-plus-windows.ps1`
+  — passed in a real, isolated native Windows window:
+  - A real Windows Git repository with a modified file, an untracked file and
+    a conflicted merge produced the three expected sections with status letters
+    and `+N/−N` counts.
+  - Clicking a file created a native right-split diff pane inside the dedicated
+    tab; the unified view showed hunk headers, both line-number columns and
+    added/removed tint at the terminal's 20px font.
+  - Full file replaced the short hunks with the whole file, same-tab reuse kept
+    one pane while updating the shared request, and native pane close left the
+    sidebar intact.
+  - The test found a real bug: switching context while a Git read was in flight
+    left `busy` set and blocked later refreshes. Fixed in `main.js` and the
+    Windows test then passed end to end.
+  - Screenshots and snapshots are in `%TEMP%\changes-plus-win-*\`. No personal
+    layout or installed mod was touched by the test; it cleans up its own tab,
+    window and app home.
+
 ## Not verified
 
-- Windows / macOS GUI behaviour, including native file paths and fonts.
+- macOS GUI behaviour.
 - Remote spaces (another Herdr machine) in a real window. The code routes
   Git and file reads through `on`, as native Changes does, but no connected
   remote was available for this run.

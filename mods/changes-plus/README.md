@@ -89,6 +89,12 @@ npm test                        # unit tests for Git parsing, grouping, diff row
 npm run test:changes-panes      # real, isolated Herdr window (Linux GPUI)
 ```
 
+Native Windows GUI test (from PowerShell, real `herdr-app.exe` and Git):
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../../scripts/test-changes-plus-windows.ps1
+```
+
 The live test clones a personal layout into a throw-away app home, installs a
 test-only driver subclass next to the unmodified production mod, creates a real
 Git fixture with modified, untracked and conflicted files, and checks the

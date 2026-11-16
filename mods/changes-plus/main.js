@@ -104,7 +104,10 @@ export default class ChangesPlus extends View {
       this.root = loc.root; this.on = loc.on;
       this.files = []; this.groups = []; this.open = null;
       this.error = null; this.note = null; this.limited = false;
-      this.loading = false; this.watched = null;
+      // A new context needs a fresh read even if the previous one was still
+      // in flight; its result is ignored by the `this.context === context`
+      // checks, so leaving `busy` set here would block refreshes forever.
+      this.loading = false; this.busy = false; this.watched = null;
     }
     if (!this.root || this.loading || this.busy) return;
     const context = this.context;
