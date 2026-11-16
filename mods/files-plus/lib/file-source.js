@@ -28,6 +28,24 @@ export function decodeBase64(value) {
   return bytes;
 }
 
+// A 1 MiB payload can exceed the native Windows VM's per-turn time budget.
+export async function decodeBase64Cooperative(value, yieldControl, isCurrent = () => true) {
+  if (typeof value !== "string" || value.length % 4 || value.length > 4 * Math.ceil(MAX_IMAGE_BYTES / 3)) {
+    throw new Error("Invalid image Base64 length");
+  }
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  const output = new Uint8Array(value.length / 4 * 3 - padding); let offset = 0;
+  for (let start = 0; start < value.length; start += 65536) {
+    if (!isCurrent()) throw new Error("Media request is stale");
+    const end = Math.min(value.length, start + 65536), part = value.slice(start, end);
+    if (end < value.length && part.includes("=")) throw new Error("Invalid image Base64");
+    const bytes = decodeBase64(part); output.set(bytes, offset); offset += bytes.length;
+    if (end < value.length) await yieldControl();
+  }
+  if (offset !== output.length) throw new Error("Invalid image Base64");
+  return output;
+}
+
 export function parseImageDimensions(bytes) {
   const bad = () => { throw new Error("Unsupported or malformed image (PNG/JPEG only)"); };
   const u16 = i => bytes[i] * 256 + bytes[i + 1];
@@ -76,7 +94,7 @@ export const IMAGE_CHUNK_BYTES = 1024 * 1024;
 // version hashes full bounded content + file metadata on every request. Helpers check
 // metadata before/after reading; later chunks and the zero-byte final check must match.
 // isCurrent is optional: stale work throws before another exec (no in-flight cancellation).
-export async function readBinary(path, on, { exec, platform, scripts, script, isCurrent = () => true } = {}) {
+export async function readBinary(path, on, { exec, platform, scripts, script, isCurrent = () => true, yieldControl = async () => {} } = {}) {
   checkPath(path);
   if (typeof exec !== "function") throw new Error("exec dependency is required");
   const windows = platform === "win32" || platform === "windows";
@@ -120,7 +138,7 @@ export async function readBinary(path, on, { exec, platform, scripts, script, is
       if (gotOffset !== offset || offset > size || chunks !== Math.ceil(size / IMAGE_CHUNK_BYTES) ||
           length !== Math.min(count, size - offset) || (version && version !== f[5]))
         throw new Error("Image changed or invalid chunk response");
-      const bytes = decodeBase64(f[6]);
+      const bytes = await decodeBase64Cooperative(f[6], yieldControl, isCurrent);
       if (bytes.length !== length) throw new Error("Incomplete image response");
       return { bytes, size, chunks, version: f[5] };
     }

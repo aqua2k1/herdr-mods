@@ -1,6 +1,7 @@
 import { div, image } from "gpui-kit";
 import { v_flex, v_virtual_list, Scrollbar } from "gpui-base";
 import { pdfLayout } from "../lib/pdf-layout.js";
+import { wheelZoomFactor } from "../lib/image-state.js";
 
 // Stable page-sized placeholders preserve scroll geometry while page bitmaps load.
 export function renderPdfDocument(pdf, session, scroll, t, callbacks) {
@@ -21,6 +22,11 @@ export function renderPdfDocument(pdf, session, scroll, t, callbacks) {
     return rows;
   }).size_full().track_scroll(scroll);
   return div().relative().flex_1().min_h(0).min_w(0).bg(t.canvas)
+    .on_scroll_wheel((event, cx) => {
+      const factor = wheelZoomFactor(event);
+      if (factor === null) return; // Leave ordinary wheel/trackpad scrolling native.
+      callbacks.zoom(factor, cx); cx.stop_propagation();
+    })
     .on_size_change((size, cx) => callbacks.size(size, cx))
     .child(div().id("files-plus-pdf-horizontal").size_full().overflow_x_scrollbar()
       .child(div().w_full().min_w(layout.width).h_full().child(pages)))

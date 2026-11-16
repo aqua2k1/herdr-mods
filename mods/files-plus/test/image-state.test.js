@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { imageState, fitScale, scaleOf, resetImage, zoomImage, panImage } from "../lib/image-state.js";
+import { imageState, fitScale, scaleOf, resetImage, zoomImage, panImage, wheelZoomFactor } from "../lib/image-state.js";
 import { PreviewRequests, previewKind } from "../lib/preview.js";
+
+test("image and PDF share modifier-wheel zoom factors; plain wheel remains scrolling", () => {
+  assert.equal(wheelZoomFactor({ modifiers: {}, delta: { y: 120 } }), null);
+  assert.equal(wheelZoomFactor({ modifiers: { control: true }, delta: { y: 120 } }), Math.exp(0.96));
+  assert.equal(wheelZoomFactor({ modifiers: { platform: true }, delta: { y: -120 } }), Math.exp(-0.96));
+  assert.equal(wheelZoomFactor({ modifiers: { control: true }, delta: { y: Infinity } }), null);
+});
 
 test("fit preserves aspect and never upscales small images", () => {
   const s = { ...imageState(), width: 800, height: 600 };

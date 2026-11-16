@@ -1,5 +1,5 @@
 import { div, image } from "gpui-kit";
-import { scaleOf, zoomImage, panImage } from "../lib/image-state.js";
+import { scaleOf, zoomImage, panImage, wheelZoomFactor } from "../lib/image-state.js";
 
 export function renderImage(resource, state, t) {
   const scale = scaleOf(state, resource);
@@ -10,8 +10,9 @@ export function renderImage(resource, state, t) {
       state.width = size.width; state.height = size.height; cx.notify();
     })
     .on_scroll_wheel((e, cx) => {
-      if (e.modifiers.control || e.modifiers.platform) {
-        zoomImage(state, resource, Math.exp(Math.max(-1, Math.min(1, e.delta.y * 0.008))), e.local_position);
+      const factor = wheelZoomFactor(e);
+      if (factor !== null) {
+        zoomImage(state, resource, factor, e.local_position);
       } else panImage(state, e.delta.x, e.delta.y);
       cx.stop_propagation(); cx.notify();
     })

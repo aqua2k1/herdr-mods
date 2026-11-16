@@ -24,7 +24,7 @@ Files stays in the right sidebar. Clicking a file creates a native preview pane 
 - POSIX targets need `sh`, `stat`, `dd`, `mktemp`, `base64` and `sha256sum` or `shasum`; Windows uses Windows PowerShell/.NET. Helpers are sent inline, not installed on the remote machine.
 - Text uses the host's 1 MiB UTF-8 read API; display is capped at 400,000 characters. Manual refresh reloads the current preview; the native folder watcher / 10-second polling refreshes the tree.
 - No artificial image pixel cap, but decoder, GPU texture and available-memory limits still apply. Full decode failures may only appear in the host log; magic/header checks do not replace a full image decoder.
-- Resource cleanup is best effort after crashes or forced termination. Only one image/page is shown per viewer; several MOD instances can still exist.
+- Resource cleanup is best effort after crashes or forced termination. A viewer keeps one image or the visible PDF pages and neighbors; several MOD instances can still exist.
 
 ## Install
 
@@ -62,11 +62,13 @@ No props: the sidebar follows the focused pane/space like native Files. Optional
 
 Preview panes are created internally with `{ role: "preview", tab, channel, root, on, file }`; `file` is relative to `root`. Their source stays fixed when focus changes. Since the host cannot update existing pane props, per-tab shared requests update the existing preview; one preview is reused per tab. Closing it releases native Editor/media resources and its shared request. The sidebar does not need to be recreated. Native model panes may still be saved/restored by Herdr itself; this MOD does not override core persistence.
 
-Shown copies accept `files-plus.refresh`, `.source`, `.fit`, `.actual`, `.zoom-in`, `.zoom-out`, `.previous`, `.next`, `.zoom-pane` and `.close-preview`. These commands have no arguments and reach shown copies; preview-only actions do not act on the sidebar. Escape / `.back` closes a model preview, not Files. +/−, 0 (Fit), 1 (100%) control the focused image viewer. Use Herdr's native pane header for pane zoom and close; no duplicate buttons are drawn inside the preview. Image +/- controls the image, not the pane.
+Shown copies accept `files-plus.refresh`, `.source`, `.fit`, `.actual`, `.zoom-in`, `.zoom-out`, `.previous`, `.next`, `.zoom-pane` and `.close-preview`. These commands have no arguments and reach shown copies; preview-only actions do not act on the sidebar. Escape / `.back` closes a model preview, not Files. +/−, 0 (Fit), 1 (100%) control the focused image viewer. Use Herdr's native pane header for pane zoom and close; no duplicate buttons are drawn inside the preview. Image +/- controls the image, not the pane. Images and PDFs share Ctrl/Cmd-wheel zoom; ordinary PDF wheel input stays native continuous scrolling.
 
 ## Resource lifecycle
 
 Temporary media is stored **under `appHome/layouts/files-plus-assets/`**, not in this repository and not under `mods/`. This is deliberate: Herdr's native watcher invalidates decoded GPUI assets for changes under `layouts/`; it does not do this for `data/` or `cache/`. Unlinking an unwatched asset would leave its decoded native image cached. No layout JSON is modified by this cache, and asset events do not reload MOD code.
+
+Native Windows Herdr 0.1.16 was observed writing empty files for `fs.writeFile(Uint8Array)`. Its compatibility adapter (`lib/cache-writer.js`) stages bounded Base64 **text** under `data/files-plus-staging/`, then atomically publishes bytes with PowerShell/.NET. Payloads are not passed in argv, and no machine-specific paths are hardcoded. `resources.js` only owns the lifecycle; other platforms retain direct native writes. Large codecs yield between small blocks to stay within the host VM's execution budget.
 
 Each viewer has an independent owner directory/lease. Switching files removes old assets; closing revokes the lease. The PDF helper checks that lease before and after publishing, so a render finishing after the viewer closes does not leave its output. Disk cleanup is tested; native eviction depends on the host's watched-asset implementation. There is no public direct GPUI eviction API.
 
@@ -79,6 +81,12 @@ npm run test:files-live -- --remote <connected-machine>
 npm run test:files-live -- --stress
 npm run test:files-panes
 npm run test:files-panes -- --keep
+```
+
+Native Windows image regression (real GUI, PNG/JPEG/5 MiB, checksums and staging cleanup):
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-files-plus-windows.ps1
 ```
 
 The renderer live test opens a real, isolated Herdr window, creates real PNG/JPEG/Markdown/code/two-page PDF fixtures, takes screenshots and verifies rendered image/PDF colors (including both adjacent pages in one continuous view), checks zero Markdown network requests and cache cleanup. The separate `test:files-panes` uses the native three-column workspace and a dedicated test tab to verify right split, same-tab reuse, native zoom, close/reopen, expanded folder icons/indentation and terminal font settings. It calls the production click handler through a test-only subclass, not a synthetic pane model; `--keep` leaves that window/tab open for manual clicks. It leaves screenshots plus `results.json` in `~/.cache/files-plus-live-*`; it does not modify your personal layout or installed MODs. It requires a desktop display and the optional PDF dependencies. `--remote` creates and removes temporary fixtures on that machine. `--stress` additionally switches images twelve times and records Linux RSS (not a GPU-memory measurement).

@@ -1,5 +1,13 @@
 # Files Plus — verification record
 
+## Native Windows image regression — verified
+
+`test-files-plus-windows.ps1` passed on **native Windows Herdr 0.1.16** (not only WSL PowerShell): PNG display with Unicode/apostrophe filename, 100%, zoom-in, JPEG, exact 5 MiB PNG, source/cache SHA-256 equality, screenshot color checks and fixture/staging cleanup. It creates and closes only its own isolated window/home; unrelated restored panes are excluded from fixture cleanup assertions by checksum. Artifacts: `$env:TEMP/files-plus-win-b643580f-c84e-46e2-82d5-5998581065a5/results.json` and `01-png-fit.png` through `05-png-5MiB.png`.
+
+A native minimal reproduction showed binary `fs.writeFile(Uint8Array)` resolving successfully but producing a zero-byte file, while text writes worked. Platform compatibility now lives in `lib/cache-writer.js`: bounded text staging plus atomic PowerShell/.NET publication on Windows; direct writes elsewhere. Large Base64 encoding/decoding yields between blocks after the native Windows VM budget interrupted a 1 MiB synchronous decode. Tests cover this cooperative path and exact byte preservation. No host source or personal Windows configuration was changed.
+
+PDF now shares the image modifier-wheel zoom factor and ordinary wheel remains native scrolling (event-handler regression tests). This is not a claim of native Windows PDF or physical wheel-device testing.
+
 ## Continuous PDF and refresh icon update
 
 Real renderer test passed 15 cases at `~/.cache/files-plus-live-J00Zv7/results.json`, including a screenshot/pixel check of **both adjacent PDF pages visible in one continuous view** (`10b-pdf-continuous-two-pages.png`). Native vertical virtualization uses the true mixed page dimensions and stable placeholders; visible pages plus one neighbor on each side are rendered serially, with out-of-range/old-scale resources evicted. The refresh control now uses a round-arrow SVG, not a font-dependent Unicode glyph. The running workspace test window was also updated and visually checked (`~/.cache/files-plus-panes-live-mtz1cJ/09-continuous-pdf.png`).
@@ -37,7 +45,7 @@ Environment: Linux under WSLg, real GPUI desktop window, installed `herdr-app 0.
 
 ### Automated tests
 
-`npm test`: **189 tests — 188 passed, 0 failed, 1 skipped**. The skipped test is the opt-in live `hc` remote 5 MiB round trip, not a successful remote verification.
+`npm test`: **195 tests — 194 passed, 0 failed, 1 skipped**. The skipped test is the opt-in live `hc` remote 5 MiB round trip, not a successful remote verification.
 
 Coverage includes:
 
@@ -110,7 +118,7 @@ The first command additionally verifies a real 5 MiB remote image in GPUI and a 
 
 ## Not yet verified / not implemented
 
-- Windows/macOS **GUI**: not tested. Windows PowerShell execution is real, but it is not a Windows desktop compatibility claim; macOS behavior currently has only shared logic/path tests.
+- Windows PNG/JPEG GUI is verified above. The full native Windows workspace routing, Markdown/PDF and physical wheel-device workflows remain pending; macOS GUI is untested.
 - Remote Windows GUI workflow, cross-OS connected-machine matrix and remote PDF end-to-end: pending.
 - Embedded Markdown images, safe link opening, extra image formats, very large media/range streaming, PDF text search/selection and OS sandboxing: not implemented.
 - Full native image decode-error callback: unavailable in the exposed host API; header checks catch obvious corruption, but deeper decode failures may only appear in the host log.

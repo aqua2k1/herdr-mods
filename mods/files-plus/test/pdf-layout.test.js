@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { wheelZoomFactor } from "../lib/image-state.js";
 import { pdfScale, pdfRasterScale, pdfLayout, PDF_PAGE_GAP } from "../lib/pdf-layout.js";
 
 const document = () => ({ id: 1, pages: 2, width: 600, fit: true, zoom: 1,
@@ -27,7 +28,7 @@ test("virtual PDF renderer returns adjacent page rows, including placeholders", 
       return value => { o.styles[key] = value; return proxy; };
     } }); return proxy;
   };
-  const sandbox = { pdfLayout,
+  const sandbox = { pdfLayout, wheelZoomFactor,
     div: () => el("div"), image: path => el("image", path), v_flex: () => el("column"),
     Scrollbar: { vertical: id => el("scrollbar", id) },
     v_virtual_list(id, count, sizes, key, render) {
@@ -37,14 +38,19 @@ test("virtual PDF renderer returns adjacent page rows, including placeholders", 
   const source = (await readFile(new URL("../renderers/pdf.js", import.meta.url), "utf8"))
     .replace(/^import .*;\n/gm, "").replace("export function renderPdfDocument", "globalThis.renderPdfDocument = function");
   vm.runInNewContext(source, sandbox);
-  const visible = [];
-  sandbox.renderPdfDocument(document(), { pages: new Map([[0, { resource: { asset: "page-1.png" } }]]), errors: new Map() }, {}, {}, {
-    visible: (...args) => visible.push(args), size() {},
+  const visible = [], zooms = [];
+  const root = sandbox.renderPdfDocument(document(), { pages: new Map([[0, { resource: { asset: "page-1.png" } }]]), errors: new Map() }, {}, {}, {
+    visible: (...args) => visible.push(args), size() {}, zoom: factor => zooms.push(factor),
   });
   assert.equal(calls[0].count, 2); assert.deepEqual(calls[0].keys, ["0", "1"]);
   assert.equal(rows.length, 2); assert.equal(rows[0].children[0].children[0].value, "page-1.png");
   assert.equal(rows[1].children[0].children[0].children[0], "Loading page 2…");
   assert.equal(visible[0][0], range);
+  let stopped = 0;
+  root.styles.on_scroll_wheel({ modifiers: {}, delta: { y: 120 } }, { stop_propagation() { stopped++; } });
+  assert.equal(zooms.length, 0); assert.equal(stopped, 0);
+  root.styles.on_scroll_wheel({ modifiers: { control: true }, delta: { y: 120 } }, { stop_propagation() { stopped++; } });
+  assert.equal(zooms[0], Math.exp(0.96)); assert.equal(stopped, 1);
 });
 
 test("refresh uses a circular SVG instead of a font-dependent character", async () => {

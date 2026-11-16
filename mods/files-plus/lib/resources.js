@@ -1,16 +1,20 @@
 import * as fs from "fs/promises";
 import { randomUUID } from "crypto";
+import { CacheWriter } from "./cache-writer.js";
 
 // Herdr watches layouts/ assets and evicts decoded GPUI images on deletion.
 // data/ and cache/ are NOT watched: unlink alone would leak the native cache.
 // These PNG/JPEG assets never change layout JSON or MOD source.
 export class Resources {
-  constructor(home) {
+  constructor(home, { platform, exec } = {}) {
     this.base = home.replace(/[\\/]$/, "");
-    this.relative = `layouts/files-plus-assets/${randomUUID()}`;
+    const owner = randomUUID();
+    this.relative = `layouts/files-plus-assets/${owner}`;
     this.directory = `${this.base}/${this.relative}`;
     this.files = new Set(); this.closed = false;
     this.lease = `${this.directory}/.alive`;
+    this.writer = new CacheWriter({ platform, exec, lease: this.lease,
+      directory: `${this.base}/data/files-plus-staging/${owner}` });
   }
 
   async init() {
@@ -44,16 +48,16 @@ export class Resources {
     return { path, asset };
   }
 
-  async binary(bytes, extension) {
+  async binary(bytes, extension, options) {
     await this.init();
     const target = this.allocate(extension);
-    try { await fs.writeFile(target.path, bytes); }
+    try { await this.writer.write(target.path, bytes, options); }
     catch (e) { await this.remove(target); throw e; }
     return target;
   }
 
-  async image(value) {
-    const target = await this.binary(value.bytes, value.extension);
+  async image(value, options) {
+    const target = await this.binary(value.bytes, value.extension, options);
     return { ...target, width: value.width, height: value.height };
   }
 
@@ -68,6 +72,7 @@ export class Resources {
     await fs.unlink(this.lease).catch(() => {});
     await Promise.all([...this.files].map(path => fs.unlink(path).catch(() => {})));
     this.files.clear();
+    await this.writer.close();
     await fs.rmdir(this.directory).catch(() => {});
   }
 }

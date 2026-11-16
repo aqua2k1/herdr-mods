@@ -23,7 +23,7 @@ import { renderPdfDocument } from "./renderers/pdf.js";
 export default class FilesPlus extends View {
   init(_p, cx) {
     this.saved = new Map(); this.entries = new Map(); this.folders = new Set(); this.pending = new Map(); this.folderRequests = new Map();
-    this.requests = new PreviewRequests(); this.resources = new Resources(appHome()); this.image = imageState();
+    this.requests = new PreviewRequests(); this.resources = new Resources(appHome(), { platform: window()?.platform, exec }); this.image = imageState();
     this.handle = cx.focus_handle(); this.pdfScroll = VirtualListScrollHandle.new(); this.file = null; this.source = false;
     this.preview = props()?.role === "preview"; this.selected = null;
     this.refresh(cx);
@@ -204,11 +204,11 @@ export default class FilesPlus extends View {
         if (this.kind === "unsupported") throw new Error("This file type has no preview yet");
         if (this.kind === "pdf") {
           if (context.on) {
-            const bytes = await readBinary(joinPath(context.cwd, path), context.on, { exec, platform: window()?.platform, scripts: await this.helperScripts(),
+            const bytes = await readBinary(joinPath(context.cwd, path), context.on, { exec, platform: window()?.platform, scripts: await this.helperScripts(), yieldControl: () => cx.sleep(0),
               isCurrent: () => this.requests.current(token) && this.current(context) });
             if (!this.requests.current(token) || !this.current(context)) return;
             if (bytes.length < 5 || String.fromCharCode(...bytes.slice(0, 5)) !== "%PDF-") throw new Error("Not a PDF file");
-            const source = await this.resources.binary(bytes, "pdf");
+            const source = await this.resources.binary(bytes, "pdf", { yieldControl: () => cx.sleep(0) });
             if (!this.requests.current(token) || !this.current(context)) { await this.resources.remove(source); return; }
             this.pdfSource = source;
           }
@@ -216,10 +216,10 @@ export default class FilesPlus extends View {
         }
         if (this.kind === "image") {
           const scripts = await this.helperScripts();
-          const value = await readImage(joinPath(context.cwd, path), context.on, { exec, platform: window()?.platform, scripts,
+          const value = await readImage(joinPath(context.cwd, path), context.on, { exec, platform: window()?.platform, scripts, yieldControl: () => cx.sleep(0),
             isCurrent: () => this.requests.current(token) && this.current(context) });
           if (!this.requests.current(token) || !this.current(context)) return;
-          const resource = await this.resources.image(value);
+          const resource = await this.resources.image(value, { yieldControl: () => cx.sleep(0) });
           if (!this.requests.current(token) || !this.current(context)) { await this.resources.remove(resource); return; }
           this.resource = resource;
         } else {
@@ -287,6 +287,14 @@ export default class FilesPlus extends View {
       await session.ensure(wanted.range, wanted.raster);
       if (this.pdfSession === session) cx.notify();
     });
+  }
+
+  zoomPdf(factor, cx) {
+    if (!this.pdf) return;
+    this.pdf.zoom = Math.max(0.05, Math.min(4, pdfScale(this.pdf) * factor));
+    this.pdf.fit = false; this.pdfRangeKey = null;
+    this.pdfScroll?.scroll_to_item(this.pdf.page - 1);
+    cx.notify();
   }
 
   pdfPage(page, _scale, cx) {
@@ -382,6 +390,7 @@ export default class FilesPlus extends View {
     if (this.fileError) return root.child(div().p(12).text_color(t.muted).child(this.fileError));
     if (this.pdf && this.pdfSession) return root.child(renderPdfDocument(this.pdf, this.pdfSession, this.pdfScroll, t, {
       visible: (range, scale, cx) => this.pdfVisible(range, scale, cx),
+      zoom: (factor, cx) => this.zoomPdf(factor, cx),
       size: (size, cx) => {
         // GPUI reports measured pixels; numeric MOD dimensions include app zoom.
         const width = size.width / (Number(settings().zoom) || 1);

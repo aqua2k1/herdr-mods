@@ -1,4 +1,9 @@
 // View-only transforms. Original bytes are never resized or recompressed.
+export function wheelZoomFactor(event) {
+  if (!(event.modifiers?.control || event.modifiers?.platform) || !Number.isFinite(event.delta?.y)) return null;
+  return Math.exp(Math.max(-1, Math.min(1, event.delta.y * 0.008)));
+}
+
 export function imageState() {
   return { fit: true, zoom: 1, x: 0, y: 0, width: 0, height: 0, drag: null };
 }
