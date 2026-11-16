@@ -28,6 +28,14 @@ Files stays in the right sidebar. Clicking a file creates a native preview pane 
 
 ## Install
 
+### With your Herdr agent
+
+```text
+Read ~/.config/herdr-app/AGENTS.md, then replace the Files panel with this mod: https://github.com/aqua2k1/herdr-mods/tree/main/mods/files-plus
+```
+
+### Manual installation
+
 Copy this whole directory (not a symlink) to `<appHome>/mods/files-plus/`, then run:
 
 ```sh

@@ -10,7 +10,11 @@ Independent, self-contained MODs in `mods/<name>/`.
 
 ### Files Plus
 
-Copy `mods/files-plus/` into your Herdr home, run `herdr-app check` and replace the Files reference in a personal layout. See [integration steps](integrations/files-plus/README.md) and [optional PDF dependencies](mods/files-plus/README.md#optional-pdf-dependencies).
+```text
+Read ~/.config/herdr-app/AGENTS.md, then replace the Files panel with this mod: https://github.com/aqua2k1/herdr-mods/tree/main/mods/files-plus
+```
+
+See [manual installation and layout integration](integrations/files-plus/README.md) and [optional PDF dependencies](mods/files-plus/README.md#optional-pdf-dependencies).
 
 ### Subscriptions
 
