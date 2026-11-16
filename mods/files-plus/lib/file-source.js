@@ -1,3 +1,5 @@
+import { createBinaryTransport } from "./platform-compat.js";
+
 // No Node or herdr imports: dependencies belong to the caller.
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 // The caller loads/caches helpers and injects scripts: { posix, windows }.
@@ -94,54 +96,25 @@ export const IMAGE_CHUNK_BYTES = 1024 * 1024;
 // version hashes full bounded content + file metadata on every request. Helpers check
 // metadata before/after reading; later chunks and the zero-byte final check must match.
 // isCurrent is optional: stale work throws before another exec (no in-flight cancellation).
-export async function readBinary(path, on, { exec, platform, scripts, script, isCurrent = () => true, yieldControl = async () => {} } = {}) {
+export async function readBinary(path, on, { isCurrent = () => true, yieldControl = async () => {}, ...transportOptions } = {}) {
   checkPath(path);
-  if (typeof exec !== "function") throw new Error("exec dependency is required");
-  const windows = platform === "win32" || platform === "windows";
-  const sources = scripts || (typeof script === "string" ? { [windows ? "windows" : "posix"]: script } : {});
-  let kind = on ? "posix" : windows ? "windows" : "posix";
-  let selected = false;
-  const quote = value => "'" + String(value).replace(/['‘’‚‛]/g, "$&$&") + "'";
-  const missingSh = error => error?.code === "ENOENT" ||
-    /cannot start sh: (?:program not found|no such file or directory|the system cannot find the file specified)/i.test(error?.message || "") ||
-    ((error?.code === 127 || error?.code === 1) &&
-      /(?:\bsh(?:[. ]exe)?\b[^\n]*(?:not found|no such file|not recognized)|(?:cannot find|could not find)[^\n]*\bsh\b)/i.test(error.stderr || error.message || ""));
+  const execute = createBinaryTransport({ ...transportOptions, on, isCurrent });
   async function request(offset, count, version) {
-    for (;;) {
-      if (!isCurrent()) throw new Error("Media request is stale");
-      const source = sources[kind];
-      if (typeof source !== "string" || !source.trim()) throw new Error("Image helper script dependency is required: " + kind);
-      const args = kind === "posix"
-        ? ["-c", source, "files-plus-image", path, String(offset), String(count), version]
-        : ["-NoProfile", "-NonInteractive", "-Command",
-          "& {\n" + source + "\n} " + [path, offset, count, version].map(quote).join(" ")];
-      let r;
-      try { r = await exec(kind === "posix" ? "sh" : "powershell", args, { on, timeout: 30000 }); }
-      catch (error) {
-        if (on && !selected && kind === "posix" && missingSh(error)) { kind = "windows"; continue; }
-        throw error;
-      }
-      if (r?.code !== 0) {
-        if (on && !selected && kind === "posix" && missingSh(r)) { kind = "windows"; continue; }
-        throw new Error(r?.stderr || "Cannot read image");
-      }
-      selected = true;
-      if (!isCurrent()) throw new Error("Media request is stale");
-      if (typeof r.stdout !== "string" || r.stdout.length > 4 * Math.ceil(IMAGE_CHUNK_BYTES / 3) + 256)
-        throw new Error("Invalid image response length");
-      const f = r.stdout.split("\n");
-      if (f.length !== 8 || f[0] !== "FILES_PLUS_IMAGE_V2" || f[7] !== "" ||
-          !f.slice(1, 5).every(x => /^(0|[1-9][0-9]*)$/.test(x)) || !/^[a-f0-9]{64}$/.test(f[5]))
-        throw new Error("Invalid image response");
-      const [gotOffset, size, chunks, length] = f.slice(1, 5).map(Number);
-      if (size > MAX_IMAGE_BYTES) throw new Error("Image exceeds 5 MiB");
-      if (gotOffset !== offset || offset > size || chunks !== Math.ceil(size / IMAGE_CHUNK_BYTES) ||
-          length !== Math.min(count, size - offset) || (version && version !== f[5]))
-        throw new Error("Image changed or invalid chunk response");
-      const bytes = await decodeBase64Cooperative(f[6], yieldControl, isCurrent);
-      if (bytes.length !== length) throw new Error("Incomplete image response");
-      return { bytes, size, chunks, version: f[5] };
-    }
+    const stdout = await execute(path, offset, count, version);
+    if (typeof stdout !== "string" || stdout.length > 4 * Math.ceil(IMAGE_CHUNK_BYTES / 3) + 256)
+      throw new Error("Invalid image response length");
+    const f = stdout.split("\n");
+    if (f.length !== 8 || f[0] !== "FILES_PLUS_IMAGE_V2" || f[7] !== "" ||
+        !f.slice(1, 5).every(x => /^(0|[1-9][0-9]*)$/.test(x)) || !/^[a-f0-9]{64}$/.test(f[5]))
+      throw new Error("Invalid image response");
+    const [gotOffset, size, chunks, length] = f.slice(1, 5).map(Number);
+    if (size > MAX_IMAGE_BYTES) throw new Error("Image exceeds 5 MiB");
+    if (gotOffset !== offset || offset > size || chunks !== Math.ceil(size / IMAGE_CHUNK_BYTES) ||
+        length !== Math.min(count, size - offset) || (version && version !== f[5]))
+      throw new Error("Image changed or invalid chunk response");
+    const bytes = await decodeBase64Cooperative(f[6], yieldControl, isCurrent);
+    if (bytes.length !== length) throw new Error("Incomplete image response");
+    return { bytes, size, chunks, version: f[5] };
   }
   const first = await request(0, IMAGE_CHUNK_BYTES, "");
   const bytes = new Uint8Array(first.size);

@@ -124,7 +124,9 @@ test('live hc remote: exact 5 MiB valid PNG, bounded replies, checksum, cleanup'
         assert.equal(options.on,machine); requests++;
         return hc(c,a);
       };
-      const result=await readImage(file,machine,{exec,platform:'win32',scripts:{posix:sh,windows:ps}});
+      // Emulate a Windows-installed helper, including BOM and CRLF, over real remote exec.
+      const windowsCheckoutSh = '\uFEFF' + sh.replace(/\n/g, '\r\n');
+      const result=await readImage(file,machine,{exec,platform:'win32',scripts:{posix:windowsCheckoutSh,windows:ps}});
       assert.equal(result.width,1); assert.equal(result.height,1);
       assert.deepEqual(Buffer.from(result.bytes),bytes);
       const {createHash}=await import('node:crypto');
@@ -188,6 +190,32 @@ test('routing, injected helpers, literal hostile paths and remote OS independenc
     }
   }
   await assert.rejects(imageWithScript('x\0y', null, {exec:nativeExec, platform:'linux'}), /path/);
+});
+
+test('POSIX helper source normalizes Windows line endings and BOM without changing paths', {skip:process.platform==='win32'}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'files-plus-crlf-'));
+  try {
+    const file = join(dir, "中文 ' image\r\n.png");
+    await writeFile(file, png);
+    for (const source of [sh.replace(/\n/g, '\r\n'), '\uFEFF' + sh.replace(/\n/g, '\r\n')]) {
+      for (const on of [null, 'remote']) {
+        let calls = 0;
+        const result = await readImage(file, on, {
+          platform: on ? 'win32' : 'linux', scripts: {posix: source, windows: ps},
+          exec: async (command, args, options) => {
+            calls++;
+            assert.equal(command, 'sh');
+            assert.equal(args[1], sh);
+            assert.equal(args[3], file);
+            assert.equal(options.on, on);
+            return nativeExec(command, args);
+          },
+        });
+        assert.deepEqual(Buffer.from(result.bytes), png);
+        assert.equal(calls, 2);
+      }
+    }
+  } finally { await rm(dir, {recursive:true, force:true}); }
 });
 
 test('remote fallback only when sh is missing, not file, utility, permission or network failures', async () => {
