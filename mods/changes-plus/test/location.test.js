@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveLocation, locationKey, joinPath } from "../lib/location.js";
+import { resolveLocation, locationKey, joinPath, machineFor } from "../lib/location.js";
 
 const spaces = [{ id: "inactive", active: false }, { id: "s", active: true, folder: "/space", machine: "vm" }];
 const panes = [{ pane: "p", cwd: "/pane" }];
@@ -38,6 +38,17 @@ test("identity is stable across field order and distinguishes machines, spaces a
     assert.notEqual(locationKey(loc), locationKey({ ...loc, ...change }));
   }
   assert.notEqual(locationKey({ root: "/a\\b" }), locationKey({ root: "/a/b" }));
+});
+
+test("a POSIX folder routes to its machine when focus has no pane", () => {
+  const spaces = [
+    { id: "local", machine: null, folder: "C:\\Users\\me" },
+    { id: "remote", machine: "wsl-arch", folder: "/home/me/project" },
+  ];
+  assert.equal(machineFor("/home/me/project/src", { pane: null, terminal: "wsl-arch/t3" }, spaces), "wsl-arch");
+  assert.equal(machineFor("/home/me/project/src", { pane: null, terminal: "t3" }, spaces), "wsl-arch");
+  assert.equal(machineFor("/home/me/other", { pane: "p1", terminal: "t3" }, spaces), null);
+  assert.equal(machineFor("C:\\Users\\me", { pane: null, terminal: "t3" }, spaces), null);
 });
 
 test("join paths without rewriting Unix backslashes or normalizing filenames", () => {

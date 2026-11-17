@@ -147,7 +147,7 @@ export default class Driver extends ChangesPlus {
   if (command === 'snapshot' && !this.preview) {
    const t = focused()?.tab;
    const value = { serial: this.serial = (this.serial || 0) + 1, panes: panes(), focused: focused(), settings: settings(), props: props(),
-    preview: this.preview, files: this.files, groups: this.groups, open: this.open, full: this.fullFile,
+    preview: this.preview, files: this.files, groups: this.groups, open: this.open, full: this.fullFile, on: this.on,
     tab: this.tab, commits: this.commits, commitsLoading: this.commitsLoading, commitsError: this.commitsError,
     remote: this.remote, branch: this.branch, historyGroups: this.tab === 'commit' && !this.selectedCommit
       ? groupCommits({ commits: this.commits, remote: this.remote, remoteHead: this.remoteHead, behind: this.behind, branch: this.branch, done: this.commitsDone }) : [],

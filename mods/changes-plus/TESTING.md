@@ -56,6 +56,10 @@ claim Windows/macOS GUI compatibility.
   - With a local bare remote, the Commits tab showed real `main` / `origin/main`
     groups, a commit's author, date and changed files, and its file diff in the
     reused unified pane.
+  - A space on the connected `wsl-arch` machine with a POSIX folder was routed
+    to that machine. Before the fix, Windows ran Git locally with the POSIX cwd
+    and failed with `os error 267` ("directory name invalid"); the test now
+    asserts `on === "wsl-arch"` and no error.
   - The test found a real bug: switching context while a Git read was in flight
     left `busy` set and blocked later refreshes. Fixed in `main.js` and the
     Windows test then passed end to end.

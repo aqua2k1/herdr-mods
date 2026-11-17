@@ -10,7 +10,7 @@ import {
 import { randomUUID } from "crypto";
 import { previewTarget, previewChannel } from "./lib/pane-target.js";
 import { terminalFonts, fontKey, rowHeight, diffWidthFor } from "./lib/fonts.js";
-import { resolveLocation, locationKey, joinPath } from "./lib/location.js";
+import { resolveLocation, locationKey, joinPath, machineFor } from "./lib/location.js";
 import {
   LIMITS, statusArgs, headArgs, topLevelArgs, numstatArgs, diffArgs,
   parseNumstat, mergeStats, parseStatus, groupFiles, diffRows, untrackedLines, limitLines,
@@ -61,18 +61,22 @@ export default class ChangesPlus extends View {
   }
 
   location() {
+    const f = focused(), allSpaces = spaces();
     if (this.preview) {
       const r = this.req();
       return r
-        ? { root: r.root, on: r.on ?? null, file: r.file, space: null }
+        ? { root: r.root, on: r.on ?? machineFor(r.root, f, allSpaces), file: r.file, space: null }
         : { root: null, on: null, file: null, space: null };
     }
-    const p = props() ?? {}, list = panes(), f = focused();
-    const loc = resolveLocation({ spaces: spaces(), panes: list, focused: f, props: p });
+    const p = props() ?? {}, list = panes();
+    const loc = resolveLocation({ spaces: allSpaces, panes: list, focused: f, props: p });
+    if (!loc.on && typeof loc.root === "string" && loc.root.startsWith("/"))
+      loc.on = machineFor(loc.root, f, allSpaces);
     // A focused diff has no terminal cwd. Keep the folder it was opened from.
     if (p.root == null && list.find(pane => pane.pane === f?.pane)?.mod === "changes-plus") {
       const request = f?.tab ? shared(previewChannel(f.tab)) : null;
-      if (request?.root) return { ...loc, root: request.root, on: request.on ?? null };
+      if (request?.root)
+        return { ...loc, root: request.root, on: loc.on ?? request.on ?? machineFor(request.root, f, allSpaces) };
     }
     return loc;
   }
@@ -365,7 +369,7 @@ export default class ChangesPlus extends View {
       ? this.commitFiles.find(f => f.path === path)
       : this.files.find(f => f.path === path);
     const request = {
-      root: this.root, on: this.on ?? null, file: path, revision: randomUUID(),
+      root: this.root, on: this.location().on ?? this.on ?? null, file: path, revision: randomUUID(),
       fresh: scope === "commit" ? false : (file?.fresh ?? false),
       hasHead: scope === "commit" ? true : (file?.hasHead ?? true),
       binary: file?.binary ?? false, full: this.fullFile,

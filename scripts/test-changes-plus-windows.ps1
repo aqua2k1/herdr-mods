@@ -15,7 +15,7 @@ $fixtures = Join-Path $root 'fixtures'
 [IO.Directory]::CreateDirectory((Join-Path $homeDir 'layouts')) > $null
 [IO.Directory]::CreateDirectory((Join-Path $fixtures 'nested')) > $null
 $oldHome = $env:HERDR_APP_HOME; $oldTelemetry = $env:HERDR_TELEMETRY
-$process = $null; $tab = $null; $passed = $false; $checks = @()
+$process = $null; $tab = $null; $remoteTab = $null; $passed = $false; $checks = @()
 $sideSerial = 0; $previewSerial = 0
 function Invoke-Herdr([string[]]$CliArgs) {
     $text = & $Herdr @CliArgs 2>&1 | Out-String
@@ -149,8 +149,8 @@ export default class Driver extends ChangesPlus {
   if (command === 'snapshot' && !this.preview) {
    const t = focused()?.tab;
    const value = { serial: this.serial = (this.serial || 0) + 1, panes: panes(), focused: focused(), settings: settings(), props: props(),
-    preview: this.preview, files: this.files, groups: this.groups, open: this.open, full: this.fullFile,
-    context: this.context, root: this.root, loading: this.loading, busy: this.busy,
+    preview: this.preview, files: this.files, groups: this.groups, open: this.open, full: this.fullFile, on: this.on,
+    context: this.context, root: this.root, on: this.on, loading: this.loading, busy: this.busy,
     tab: this.tab, commits: this.commits, commitsLoading: this.commitsLoading, commitsError: this.commitsError,
     remote: this.remote, branch: this.branch, historyGroups: this.tab === 'commit' && !this.selectedCommit
       ? groupCommits({ commits: this.commits, remote: this.remote, remoteHead: this.remoteHead, behind: this.behind, branch: this.branch, done: this.commitsDone }) : [],
@@ -291,6 +291,23 @@ export default class Driver extends ChangesPlus {
     $checks += 'commit file reuses the unified diff pane via git show'
     Invoke-Herdr @('do', 'changes-plus.changes') | Out-Null
 
+    # A remote POSIX folder must run Git on its machine. A local run on Windows
+    # fails with os error 267 ("directory name invalid").
+    $remoteCreated = Invoke-Herdr @('do', 'space.new', '--machine', 'wsl-arch', '--folder', '/home/mingzi47/Projects/herdr-mods', '--name', ('ChangesPlusRemote' + [guid]::NewGuid().ToString('N').Substring(0, 6))) | ConvertFrom-Json
+    $script:remoteTab = $remoteCreated.tab
+    if (-not $script:remoteTab) { throw "Could not create remote tab: $remoteCreated" }
+    Invoke-Herdr @('do', 'tab.select', '--id', $script:remoteTab) | Out-Null
+    Invoke-Herdr @('do', 'layout.select', '--stack', 'panel-body', '--child', 'changes') | Out-Null
+    Invoke-Herdr @('do', 'layout.show', '--id', 'panel') | Out-Null
+    Start-Sleep -Seconds 3
+    $s = Get-Snapshot '10-remote-posix'
+    if ($s.state.on -ne 'wsl-arch') { throw "Remote folder was not routed to its machine: on=$($s.state.on)" }
+    if ($s.state.error) { throw "Remote Git read failed: $($s.state.error)" }
+    $shot = Join-Path $root '10-remote-posix.png'
+    Invoke-Herdr @('shot', $shot) | Out-Null
+    $checks += 'remote POSIX folder runs Git on its machine, not locally on Windows'
+    Invoke-Herdr @('do', 'tab.select', '--id', $script:tab) | Out-Null
+
     Invoke-Herdr @('do', 'pane.close', '--pane', $previewPane.pane) | Out-Null
     $s = Wait-Panes 1
     $s = Wait-Loaded
@@ -307,6 +324,9 @@ export default class Driver extends ChangesPlus {
     }
     if ($script:tab -and -not ($Keep -and $passed)) {
         try { Invoke-Herdr @('do', 'tab.close', '--id', $script:tab, '--confirmed', 'true') | Out-Null } catch { }
+    }
+    if ($script:remoteTab -and -not ($Keep -and $passed)) {
+        try { Invoke-Herdr @('do', 'tab.close', '--id', $script:remoteTab, '--confirmed', 'true') | Out-Null } catch { }
     }
     $report = @{ passed = $passed; version = $version; checks = $checks; root = $root; home = $homeDir; error = $failure; kept = ($Keep -and $passed) }
     Write-Text (Join-Path $root 'results.json') ($report | ConvertTo-Json -Depth 8)

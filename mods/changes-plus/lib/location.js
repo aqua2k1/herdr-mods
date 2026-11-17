@@ -26,6 +26,18 @@ export function locationKey(location) {
   ]);
 }
 
+// A POSIX folder belongs to a machine, not to Windows. If focus briefly has no
+// pane (a layout terminal block) or no machine, use the terminal's
+// `machine/address` prefix, then a space whose folder owns the path. Without
+// this, Windows runs git locally with a POSIX cwd and fails with os error 267.
+export function machineFor(root, focused, spaces = []) {
+  const terminal = focused?.terminal;
+  if (typeof terminal === "string" && terminal.includes("/")) return terminal.split("/")[0];
+  const space = spaces.find(s => s.machine && typeof s.folder === "string" &&
+    (root === s.folder || root.startsWith(s.folder.replace(/[\\/]+$/, "") + "/")));
+  return space?.machine ?? null;
+}
+
 // Relative paths use "/" in the tree. Infer Windows only from the root;
 // a backslash inside a POSIX filename must remain a literal backslash.
 export function joinPath(root, relative) {
