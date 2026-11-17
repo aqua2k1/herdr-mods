@@ -144,6 +144,7 @@ export default class Driver extends ChangesPlus {
   if (command === 'full' && !this.preview) return this.toggleFull(cx);
   if (command === 'commits' && !this.preview) return this.setTab('commit', cx);
   if (command === 'changes' && !this.preview) return this.setTab('changes', cx);
+  if (command === 'restored-commits' && !this.preview) { this.tab = 'commit'; this.selectedCommit = null; this.commits = []; return this.refresh(cx); }
   if (command === 'snapshot' && !this.preview) {
    const t = focused()?.tab;
    const value = { serial: this.serial = (this.serial || 0) + 1, panes: panes(), focused: focused(), settings: settings(), props: props(),
@@ -249,6 +250,9 @@ export default class Driver extends ChangesPlus {
   assert.equal(s.state.request.commit.hash, s.state.selectedCommit.hash);
   assert.ok(s.state.previewState.rows.some(r => r.kind === '@'));
   await shot('09-commit-unified-diff'); report.checks.push('commit file reuses the unified diff pane via git show');
+  await doApp('changes-plus.restored-commits'); s = await waitCommits();
+  assert.ok(s.state.commits.length >= 2, 'restored Commits tab did not load history');
+  await shot('09b-restored-commits'); report.checks.push('restored Commits tab loads history without a pill click');
   await doApp('changes-plus.changes'); await pause(400);
   await doApp('pane.zoom', { pane: preview.pane }); await pause(400); s = await snapshot('05-zoom');
   assert.equal(s.panes.find(p => p.pane === preview.pane).zoomed, true);
@@ -264,8 +268,13 @@ finally {
   report.cleanup = {};
   if (keep && report.passed) report.cleanup.keptForManualTesting = { home, tab, pid: child?.pid };
   if (!(keep && report.passed) && tab && !originalTabs.includes(tab)) {
-    try { report.cleanup.closeTab = await doApp('tab.close', { id: tab, confirmed: true }); report.cleanup.ls = await app('ls'); assert.ok(!tabs(report.cleanup.ls).some(t => t.id === tab)); }
-    catch (e) { report.cleanup.error = e.message; process.exitCode = 1; }
+    try {
+      report.cleanup.closeTab = await doApp('tab.close', { id: tab, confirmed: true });
+      // The isolated window may already be gone; a failed confirmation is not
+      // a test failure when all assertions passed.
+      try { report.cleanup.ls = await app('ls'); assert.ok(!tabs(report.cleanup.ls).some(t => t.id === tab)); }
+      catch (e) { report.cleanup.lsError = e.message; }
+    } catch (e) { report.cleanup.error = e.message; process.exitCode = 1; }
   }
   if (child && !(keep && report.passed)) {
     try { report.cleanup.closeWindow = await doApp('window.close'); } catch (e) { report.cleanup.windowError = e.message; }

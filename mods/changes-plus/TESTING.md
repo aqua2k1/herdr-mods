@@ -56,6 +56,8 @@ claim Windows/macOS GUI compatibility.
   - With a local bare remote, the Commits tab showed real `main` / `origin/main`
     groups, a commit's author, date and changed files, and its file diff in the
     reused unified pane.
+  - A restored Commits tab (left selected before reload) loaded history without
+    a pill click.
   - A space on the connected `wsl-arch` machine with a POSIX folder was routed
     to that machine. Before the fix, Windows ran Git locally with the POSIX cwd
     and failed with `os error 267` ("directory name invalid"); the test now

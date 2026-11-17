@@ -163,6 +163,9 @@ export default class ChangesPlus extends View {
         if (this.context !== context) return;
         this.root = root; this.files = parsed.files; this.groups = groupFiles(parsed.files);
         this.hasHead = hasHead;
+        // A restored Commits tab has to load its history once the repository
+        // is known; setTab only fires when the person clicks the pill.
+        if (this.tab === "commit" && !this.selectedCommit) this.loadCommits(cx);
         this.limited = parsed.limited; this.error = null;
         this.watch(root, cx);
         if (this.open && !parsed.files.some(file => file.path === this.open)) this.open = null;

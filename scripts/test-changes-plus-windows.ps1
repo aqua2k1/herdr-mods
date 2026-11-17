@@ -146,6 +146,7 @@ export default class Driver extends ChangesPlus {
   if (command === 'full' && !this.preview) return this.toggleFull(cx);
   if (command === 'commits' && !this.preview) return this.setTab('commit', cx);
   if (command === 'changes' && !this.preview) return this.setTab('changes', cx);
+  if (command === 'restored-commits' && !this.preview) { this.tab = 'commit'; this.selectedCommit = null; this.commits = []; return this.refresh(cx); }
   if (command === 'snapshot' && !this.preview) {
    const t = focused()?.tab;
    const value = { serial: this.serial = (this.serial || 0) + 1, panes: panes(), focused: focused(), settings: settings(), props: props(),
@@ -289,6 +290,12 @@ export default class Driver extends ChangesPlus {
     $shot = Join-Path $root '09-commit-unified-diff.png'
     Invoke-Herdr @('shot', $shot) | Out-Null
     $checks += 'commit file reuses the unified diff pane via git show'
+    Invoke-Herdr @('do', 'changes-plus.restored-commits') | Out-Null
+    $s = Wait-Commits
+    if (@($s.state.commits).Count -lt 2) { throw 'Restored Commits tab did not load history' }
+    $shot = Join-Path $root '09b-restored-commits.png'
+    Invoke-Herdr @('shot', $shot) | Out-Null
+    $checks += 'restored Commits tab loads history without a pill click'
     Invoke-Herdr @('do', 'changes-plus.changes') | Out-Null
 
     # A remote POSIX folder must run Git on its machine. A local run on Windows
