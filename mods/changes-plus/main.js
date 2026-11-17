@@ -115,7 +115,7 @@ export default class ChangesPlus extends View {
     if (this.preview) {
       if (next !== this.context?.key) {
         const loc = this.location();
-        this.context = { cwd: loc.root, key: next };
+        this.context = { cwd: loc.root, on: loc.on, key: next };
         this.root = loc.root; this.on = loc.on; this.file = loc.file;
         this.loadedRevision = this.req()?.revision ?? null;
         this.loadDiff(cx);
@@ -124,7 +124,7 @@ export default class ChangesPlus extends View {
     }
     if (next !== this.context?.key) {
       const loc = this.location();
-      this.context = { cwd: loc.root, key: next };
+      this.context = { cwd: loc.root, on: loc.on, key: next };
       this.root = loc.root; this.on = loc.on;
       this.files = []; this.groups = []; this.open = null;
       this.error = null; this.note = null; this.limited = false;
@@ -139,14 +139,14 @@ export default class ChangesPlus extends View {
     this.loading = true; this.busy = true;
     cx.spawn(async cx => {
       try {
-        const top = await exec("git", topLevelArgs(), { cwd: context.cwd, on: context.on });
+        const top = await exec("git", topLevelArgs(), { cwd: context.cwd, on: context.on ?? this.on });
         if (this.context !== context) return;
         if (top.code !== 0) {
           this.root = null; this.files = []; this.groups = []; this.open = null;
           this.error = "Not a git repository"; return;
         }
         const root = top.stdout.trim();
-        const git = args => exec("git", args, { cwd: root, on: context.on });
+        const git = args => exec("git", args, { cwd: root, on: context.on ?? this.on });
         const status = await git(statusArgs());
         if (this.context !== context) return;
         if (status.code !== 0) throw new Error(status.stderr);

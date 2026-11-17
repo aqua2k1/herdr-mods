@@ -59,9 +59,12 @@ claim Windows/macOS GUI compatibility.
   - A restored Commits tab (left selected before reload) loaded history without
     a pill click.
   - A space on the connected `wsl-arch` machine with a POSIX folder was routed
-    to that machine. Before the fix, Windows ran Git locally with the POSIX cwd
-    and failed with `os error 267` ("directory name invalid"); the test now
-    asserts `on === "wsl-arch"` and no error.
+    to that machine. The first fix only corrected `location()`; the real cause
+    was that `refresh()` stored `{ cwd, key }` in `this.context` and then ran
+    every Git call with `context.on` (undefined), dropping the machine again.
+    The test now asserts both `on` and `context.on` are `wsl-arch` and no error
+    is shown. Verified in the person's live Windows window too: the panel went
+    from `os error 267` to "No uncommitted changes".
   - The test found a real bug: switching context while a Git read was in flight
     left `busy` set and blocked later refreshes. Fixed in `main.js` and the
     Windows test then passed end to end.

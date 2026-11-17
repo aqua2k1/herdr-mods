@@ -309,6 +309,7 @@ export default class Driver extends ChangesPlus {
     Start-Sleep -Seconds 3
     $s = Get-Snapshot '10-remote-posix'
     if ($s.state.on -ne 'wsl-arch') { throw "Remote folder was not routed to its machine: on=$($s.state.on)" }
+    if ($s.state.context.on -ne 'wsl-arch') { throw "Refresh context lost the machine: context.on=$($s.state.context.on)" }
     if ($s.state.error) { throw "Remote Git read failed: $($s.state.error)" }
     $shot = Join-Path $root '10-remote-posix.png'
     Invoke-Herdr @('shot', $shot) | Out-Null
