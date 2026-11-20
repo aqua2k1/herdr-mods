@@ -13,6 +13,18 @@ const row = (title, value) => h_flex().gap(8).justify_between().items_center()
   .child(div().flex_1().min_w(0).child(title))
   .child(div().flex_none().child(value));
 
+function quotaRow(quota, t) {
+  const item = v_flex().gap(6).child(row(quota.title,
+    quota.usedPercent != null ? `已用 ${percent(quota.usedPercent)}` :
+      `${quota.used ?? "—"} / ${quota.limit ?? "—"} ${quota.unit ?? ""}`));
+  if (Number.isFinite(quota.usedPercent)) item.child(bar(quota.usedPercent, t));
+  if (quota.resetsAt != null) item.child(div().text_size(11).text_color(t.dim)
+    .child(quota.resetsAt <= Date.now()
+      ? "已到重置时间，重新打开以更新"
+      : `重置：${dateTime(quota.resetsAt)}`));
+  return item;
+}
+
 export function providerBlock(provider, state, t, credentialContent = null) {
   const snapshot = state.snapshot;
   const heading = h_flex().gap(8).items_center();
@@ -33,17 +45,17 @@ export function providerBlock(provider, state, t, credentialContent = null) {
   if (state.error) card.child(div().text_color(t.ansi1).child(`查询失败：${state.error}`));
   if (!snapshot && state.status === "idle" && !credentialContent) card.child(div().text_color(t.dim).child("打开面板时查询"));
   if (snapshot) {
-    const body = v_flex().gap(12).opacity(state.status === "ready" ? 1 : 0.55);
-    for (const quota of snapshot.quotas ?? []) {
-      const item = v_flex().gap(6).child(row(quota.title,
-        quota.usedPercent != null ? `已用 ${percent(quota.usedPercent)}` :
-          `${quota.used ?? "—"} / ${quota.limit ?? "—"} ${quota.unit ?? ""}`));
-      if (Number.isFinite(quota.usedPercent)) item.child(bar(quota.usedPercent, t));
-      if (quota.resetsAt != null) item.child(div().text_size(11).text_color(t.dim)
-        .child(quota.resetsAt <= Date.now()
-          ? "已到重置时间，重新打开以更新"
-          : `重置：${dateTime(quota.resetsAt)}`));
-      body.child(item);
+    const quotas = snapshot.quotas ?? [];
+    // Many quota buckets need tighter spacing to stay readable in the popover.
+    const body = v_flex().gap(quotas.length > 3 ? 8 : 12)
+      .opacity(state.status === "ready" ? 1 : 0.55);
+    let lastGroup;
+    for (const quota of quotas) {
+      if (quota.group && quota.group !== lastGroup) {
+        body.child(div().text_size(11).text_color(t.muted).child(quota.group));
+        lastGroup = quota.group;
+      }
+      body.child(quotaRow(quota, t));
     }
     if ("accountAvailable" in snapshot) {
       body.child(row("API 调用",
