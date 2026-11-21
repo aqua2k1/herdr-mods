@@ -78,6 +78,19 @@ class AgyHelperTests(unittest.TestCase):
         if os.name != "nt":
             self.assertTrue(kwargs["start_new_session"])
 
+    def test_fixed_proxy_only_changes_child_environment(self):
+        with patch.dict(os.environ, {
+            "HTTP_PROXY": "http://other-proxy:8080",
+            "HTTPS_PROXY": "http://other-proxy:8443",
+        }):
+            code, _out, err, popen, _proc = self.call()
+            self.assertEqual(code, 0, err)
+            env = popen.call_args.kwargs["env"]
+            self.assertEqual(env["HTTP_PROXY"], "http://127.0.0.1:7890")
+            self.assertEqual(env["HTTPS_PROXY"], "http://127.0.0.1:7890")
+            self.assertEqual(os.environ["HTTP_PROXY"], "http://other-proxy:8080")
+            self.assertEqual(os.environ["HTTPS_PROXY"], "http://other-proxy:8443")
+
     def test_whitelists_only_quota_fields(self):
         _code, out, err, _popen, _proc = self.call()
         self.assertEqual(err, "")
