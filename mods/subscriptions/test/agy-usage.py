@@ -52,18 +52,13 @@ class AgyHelperTests(unittest.TestCase):
         proc.returncode = code
         proc.poll.return_value = code
 
-        def spawn(*args, **kwargs):
-            # The temporary browser stub is removed when helper.main returns.
-            proc.browser_exists_at_spawn = os.path.isfile(kwargs["env"]["BROWSER"])
-            return proc
-
         with patch.object(helper, "command", return_value=command or ["/fake/agy"]), \
-                patch.object(helper.subprocess, "Popen", side_effect=spawn) as popen, \
+                patch.object(helper.subprocess, "Popen", return_value=proc) as popen, \
                 contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             result = helper.main()
         return result, stdout.getvalue(), stderr.getvalue(), popen, proc
 
-    def test_headless_command_fixed_log_and_no_browser_popup(self):
+    def test_headless_command_and_fixed_log(self):
         code, out, err, popen, proc = self.call()
         self.assertEqual(code, 0, err)
         args = popen.call_args.args[0]
@@ -72,11 +67,25 @@ class AgyHelperTests(unittest.TestCase):
         self.assertEqual(args[5], "--log-file")
         kwargs = popen.call_args.kwargs
         self.assertNotIn("must-not-forward", out + err)
-        self.assertTrue(proc.browser_exists_at_spawn)
         self.assertEqual(kwargs["env"]["NO_COLOR"], "1")
         self.assertEqual(json.loads(out)["status"], "SUCCESS")
         if os.name != "nt":
             self.assertTrue(kwargs["start_new_session"])
+
+    def test_browser_environment_is_not_overridden(self):
+        for browser in (None, "user-browser"):
+            with self.subTest(browser=browser), patch.dict(os.environ):
+                if browser is None:
+                    os.environ.pop("BROWSER", None)
+                else:
+                    os.environ["BROWSER"] = browser
+                code, _out, err, popen, _proc = self.call()
+                self.assertEqual(code, 0, err)
+                env = popen.call_args.kwargs["env"]
+                if browser is None:
+                    self.assertNotIn("BROWSER", env)
+                else:
+                    self.assertEqual(env["BROWSER"], browser)
 
     def test_fixed_proxy_only_changes_child_environment(self):
         with patch.dict(os.environ, {

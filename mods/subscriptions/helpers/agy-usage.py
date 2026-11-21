@@ -137,15 +137,7 @@ def fetch():
     if not args:
         raise RuntimeError("未找到 agy CLI，请安装并登录 Antigravity CLI 后重启 Herdr")
     with tempfile.TemporaryDirectory(prefix="herdr-agy-") as tmp:
-        # Headless print mode may invoke open/xdg-open when logged out. Point
-        # BROWSER at a no-op so a background panel query never opens a browser.
-        noop = os.path.join(tmp, "noop.cmd" if os.name == "nt" else "noop")
-        with open(noop, "w", encoding="utf-8") as handle:
-            handle.write("@exit /b 0\n" if os.name == "nt" else "#!/bin/sh\nexit 0\n")
-        if os.name != "nt":
-            os.chmod(noop, 0o700)
         env = build_proxy_env()
-        env["BROWSER"] = noop
         env["NO_COLOR"] = "1"
         process = None
         try:
